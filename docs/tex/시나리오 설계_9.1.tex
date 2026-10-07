@@ -1,0 +1,737 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{kotex}
+\usepackage[margin=22mm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{setspace}
+\usepackage{xcolor}
+
+\setstretch{1.16}
+\setlength{\parindent}{1em}
+\setlength{\parskip}{0.45em}
+\renewcommand{\arraystretch}{1.25}
+
+\title{\textbf{5PL 미들마일 플랫폼 연구의 문제 설정 및 시장 시나리오 설계}}
+\author{유재우}
+\date{2026년 9월}
+
+\begin{document}
+
+\maketitle
+
+\section{문서의 목적}
+
+본 연구는 5PL 미들마일 플랫폼의 강건 선제계약 및 최적 경매주기를 모델링하며 핵심 연구질문은 다음과 같다.
+
+\begin{quote}
+\textbf{불확실한 수요와 운송망 충격 하에서 5PL 미들마일 플랫폼은 얼마나 많은 운송용량을 선제계약하고,
+경매를 얼마나 자주 열어야 하는가?}
+\end{quote}
+
+본 연구는 가격결정 자체를 주된 연구대상으로 삼지 않는다.
+매칭은 판매자, 소비자, 운송업체 및 품목의 공급ㆍ수요ㆍ운송용량을 바탕으로 수행하고,
+가격청산은 매칭 결과 이후 MMTR--MVCG 형식의 사후 절차로 처리한다.
+시장 시나리오 역시 운송업체의 지역 선호, 거리 선호, 특정 품목의 납기 우선순위, 전략적 가격인상과 같은 추가 행동을 도입하지 않는다.
+
+\section{시장 시나리오 설계}
+
+\subsection{시장논리에 기반한 매칭}
+
+본 연구에서는 특정 소비자 또는 품목에 인위적인 우선순위를 부여하지 않는다.
+예를 들어 긴급화물, 고가화물, 특정 납기 민감품목을 별도로 정의하여 우선 배정하는 구조는 사용하지 않는다.
+두 품목이 존재하더라도 두 품목의 차이는 중량과 부피와 같은 \textbf{물리적 특성}에만 둔다.
+
+또한 Load-to-truck ratio 사례와 같은 거리, 지역, 특정 노선의 선호도와 같은 공간적 가중치도 도입하지 않는다.
+따라서 특정 지역을 운송업체가 선호하거나, 특정 판매자--소비자 조합에 지역적 이점이 존재한다는 가정은 배제한다.
+\textcolor{red}{본 연구에서 관찰하고자 하는 현상은 ``어느 지역이 유리한가''가 아니라 ``주어진 공급, 수요, 운송용량 하에서 어떤 거래조합이 최적의 매칭을 형성하는가''이다.}
+
+만약 경매주기 또는 강건성 수준을 변경했을 때 성과가 달라진다면,
+그 원인을 지역 선호나 품목 우선순위가 아니라
+\textbf{수급균형, 운송용량, 선제계약 수준 및 불확실성}에서 찾을 수 있다.
+
+\begin{table}
+\centering
+\caption{본 실험에서 의도적으로 제외하는 요소}
+\begin{tabular}{p{0.30\textwidth}p{0.60\textwidth}}
+\toprule
+\textbf{요소} & \textbf{처리 원칙} \\
+\midrule
+품목별 우선순위 & 사용하지 않음. 품목은 물리적 특성만 다르게 설정 \\
+거리 및 지역 가중치, 선호도 & 사용하지 않음 \\
+공급부족에 따른 가격인상 & Core MILP에 포함하지 않음 \\
+가격결정 & 매칭 이후 MMTR--MVCG 방식으로 사후 계산 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{기본 시장구조}
+
+\subsection{시장 참여자 비율}
+
+시장 참여자 수는 판매자, 소비자, 운송업체의 상대적 규모를 일정하게 통제하는 방식으로 설정한다.
+초기 기준비율은 다음과 같다.
+
+\[
+|I|:|J|:|K| = 1.5:2:1.
+\]
+
+이를 작은 정수 규모로 구현하면 $3:4:2$가 되지만,
+수치실험에서 지나치게 작은 시장이 되는 것을 방지하기 위해 기준 실험에서는 두 배 규모인
+
+\[
+\boxed{|I|=6,\qquad |J|=8,\qquad |K|=4}
+\]
+
+를 기본값으로 사용한다.
+품목은 두 개만 사용하여
+
+\[
+\boxed{|L|=2}
+\]
+
+로 둔다.
+이 정도의 품목 수만으로도 중량 제약과 부피 제약이 서로 다른 방식으로 작동하는
+weigh-out 및 cube-out 상황을 관찰할 수 있으므로,
+초기 실험에서 불필요하게 품목 수를 늘리지 않는다.
+
+\begin{table}[h!]
+\centering
+\caption{기준 시장의 참여자 구성}
+\begin{tabular}{ccc}
+\toprule
+\textbf{구분} & \textbf{기호} & \textbf{기준 규모} \\
+\midrule
+판매자 & $I$ & 6 \\
+소비자 & $J$ & 8 \\
+운송업체 & $K$ & 4 \\
+품목 & $L$ & 2 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{품목 구성}
+
+품목 $A$와 $B$는 우선순위가 아닌 물리적 특성만 서로 다르게 설정한다.
+예를 들어 다음과 같은 대칭적인 구조를 사용할 수 있다.
+
+\begin{table}[h!]
+\centering
+\caption{두 품목의 물리적 특성 예시}
+\begin{tabular}{cccc}
+\toprule
+\textbf{품목} & \textbf{해석} & \textbf{중량계수 $w_l$} & \textbf{부피계수 $v_l$} \\
+\midrule
+$A$ & 중량소모가 상대적으로 큰 품목 & 10 & 2 \\
+$B$ & 부피소모가 상대적으로 큰 품목 & 2 & 10 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+이 설정의 목적은 품목 $A$ 또는 $B$를 중요품목으로 만들기 위한 것이 아니다.
+동일한 운송업체의 제한된 중량 및 부피 capacity를 두 품목이 서로 다른 비율로 사용하도록 만들어, 다품종의 거래를 표현하기 위함이다.
+
+\section{판매자와 품목의 관계 설정}
+
+판매자와 품목의 관계는 세 가지 방식으로 고려하였다.
+
+\begin{longtable}{p{0.10\textwidth}p{0.28\textwidth}p{0.26\textwidth}p{0.26\textwidth}}
+\caption{판매자--품목 관계의 대안 비교} \\
+\toprule
+\textbf{대안} & \textbf{구조} & \textbf{장점} & \textbf{판단} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{대안} & \textbf{구조} & \textbf{장점} & \textbf{판단} \\
+\midrule
+\endhead
+
+1 &
+한 판매자가 여러 품목을 동시에 공급.
+예: 판매자 1이 $A$ 10개, $B$ 20개 공급 &
+가장 일반적인 multi-item 구조이며 기존 $\hat s_{ilt}$를 그대로 활용 가능 &
+가능한 구조이나 모든 판매자가 모든 품목을 공급하면 시장이 지나치게 dense해질 수 있음 \\
+
+2 &
+판매자별 판매가능 품목을 구분.
+예: 판매자 1은 $A$만 10개, 판매자 2는 $B$만 20개 공급 &
+판매자 전문화가 명확하며, 판매하지 않는 품목은 $\hat s_{ilt}=0$으로 표현 가능.
+두 품목은 공통 운송용량을 두고 경쟁 &
+\textcolor{blue}{\textbf{기준 시나리오로 채택}} \\
+
+3 &
+판매자 1명을 화물 1단위로 해석.
+예: 판매자 1명이 $A$ 1개만 공급 &
+개별 주문 단위의 이산 거래처럼 보일 수 있음 &
+판매자(agent)와 공급수량(quantity)을 혼동하고 시장규모가 불필요하게 증가하므로 사용하지 않음 \\
+
+\bottomrule
+\end{longtable}
+
+기준 시나리오에서는 판매자 6명을 품목별로 전문화한다.
+예를 들어 판매자 1--3은 품목 $A$를 공급하고,
+판매자 4--6은 품목 $B$를 공급하도록 설정한다.
+판매하지 않는 품목의 공급량은 0으로 두면 되므로 새로운 이진 파라미터를 추가할 필요가 없다.
+반면 모든 소비자는 두 품목 모두에 대한 수요를 가질 수 있도록 설정한다.
+동일 품목에 대해 하나의 판매자는 복수의 소비자에게 공급할 수 있고,
+하나의 소비자도 복수의 판매자로부터 물량을 공급받을 수 있도록 사전에 판매자--소비자 쌍을 고정하지 않는다.
+따라서 품목 $A$와 $B$ 각각에서 3명의 판매자와 8명의 소비자가 다대다로 거래할 수 있으며,
+본 연구의 매칭은 품목별 
+\textbf{N:M matching 구조}를 갖는다.
+
+\begin{table}[h!]
+\centering
+\caption{기준 판매자 전문화 구조}
+\begin{tabular}{ccc}
+\toprule
+\textbf{판매자} & \textbf{품목 $A$ 공급} & \textbf{품목 $B$ 공급} \\
+\midrule
+$i_1,i_2,i_3$ & 양의 공급량 & 0 \\
+$i_4,i_5,i_6$ & 0 & 양의 공급량 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+이 구조에서도 품목별 시장이 완전히 독립되는 것은 아니다.
+두 품목은 동일한 운송업체의 중량 및 부피 capacity를 공유하므로,
+실행단계의 매칭에서는 제한된 운송자원을 두고 간접적으로 경쟁하게 된다.
+또한 판매자 또는 소비자별 거래상대의 수를 1개로 제한하는 별도의 제약을 두지 않음으로써,
+실제 최적화 단계에서도 N:M 구조가 유지되도록 한다.
+
+\section{수요와 공급 데이터 생성 원칙}
+
+\subsection{명목시장과 실제시장 구분}
+
+본 연구에서는 Zoe, Chiara(2018)이 사용한 것처럼 소비자가 주문을 게시한 뒤 판매자가 그 주문을 보고 즉시 공급에 참여하는
+완전 반응형 P2P 플랫폼 구조를 사용하지 않는다.
+그러한 구조는 실제 수요가 발생한 이후 공급자가 반응할 수 있기 때문에
+실제 수요를 알기 전에 운송용량을 선제적으로 확보해야 하는 1단계 robust optimization의 필요성이 약해질 수 있다.
+
+따라서 기준 시나리오는 다음의 시간적 순서를 따른다.
+
+\begin{enumerate}[label=\arabic*)]
+    \item 시장에는 판매자별 품목 공급가능량 $\hat s_{ilt}$가 존재한다.
+    \item 플랫폼은 과거자료 또는 예측을 통해 소비자별 명목수요 $\hat d_{jlt}$를 알고 있다.
+    \item 실제 수요폭증과 운송망 충격이 실현되기 전에 플랫폼이 선제계약량 $x^R_{iklt}$를 결정한다.
+    \item 이후 실행 시나리오가 실현되면 실제 수요와 사용가능 운송용량을 바탕으로
+    $y_{ijklts}$, $m_{jlts}$, $z_{ijklts}$(실제 운송 물량, 이월 수요, 거래 성립)가 결정된다.
+\end{enumerate}
+
+즉, 1단계의 명목수요는 ``이미 확정된 주문''이라기보다
+\textbf{선제계약 의사결정을 위한 예측수요}의 의미를 가지고, 2단계의 불확실성을 모르는 상황이다.
+2단계에서는 실제 불확실성을 가지는 상황이 관측된 뒤 이에 맞춰 매칭을 조정한다.
+
+\subsection{수요ㆍ공급 범위의 설정}
+
+판매자별 품목 공급량과 소비자별 품목 수요량은 일정한 범위 또는 확률분포 안에서 생성한다.
+다만 해당 범위를 처음부터 임의로 고정하기보다,
+먼저 $\Gamma=0$인 nominal baseline에서 시장이 정상적으로 작동하도록 calibration한 뒤 확정한다.
+
+초기 calibration에서 확인해야 할 조건은 다음과 같다.
+
+\begin{itemize}
+    \item 판매자 총공급이 수요에 비해 지나치게 크지 않아야 한다.
+    \item 반대로 총공급이 항상 수요보다 부족하여 구조적인 backlog가 발생해서도 안 된다.
+    \item 중량 및 부피 운송용량이 항상 여유롭거나 항상 부족하지 않아야 한다.
+    \item 경매주기 $\Delta$가 달라질 때 매칭성과가 실제로 달라질 수 있는 중간 수준의 시장을 구성해야 한다.
+\end{itemize}
+
+수요와 공급이 한쪽으로 지나치게 치우치는 것을 방지하기 위해,
+품목별 총공급과 명목수요의 비율도 함께 확인한다. 품목 $l$의 기준시장에서
+
+\[
+\rho_l^{SD}
+=
+\frac{\sum_i \hat s_{ilt}}{\sum_j \hat d_{jlt}}
+\]
+
+를 계산하고, nominal baseline에서는 수요와 공급이 대체로 균형을 이루면서도
+실행단계의 수요폭증을 일부 흡수할 수 있도록 \textbf{약 1.1--1.3 수준을 초기 calibration 범위}로 사용한다.
+이 범위는 현실시장의 고정된 비율을 의미하는 것이 아니라,
+과잉공급과 구조적 공급부족을 동시에 피하기 위한 수치실험상의 시작점이며,
+pilot test에서 서비스율, backlog 및 제약의 binding 여부를 확인한 뒤 최종 범위를 조정한다.
+
+따라서 데이터 생성의 목적은 특정 현실시장의 Load-to-Truck Ratio를 복제하는 것이 아니라,
+\textbf{수급 균형이 매칭성과에 영향을 줄 수 있는 통제된 market}을 만드는 데 있다.
+
+\section{시장 시나리오와 실행 시나리오의 구분}
+
+본 연구에서는 ``시장 시나리오''와 2단계 실행 시나리오 $s$를 구분한다.
+
+\begin{table}[h!]
+\centering
+\caption{두 종류의 시나리오 구분}
+\begin{tabular}{p{0.25\textwidth}p{0.30\textwidth}p{0.35\textwidth}}
+\toprule
+\textbf{구분} & \textbf{의미} & \textbf{예시} \\
+\midrule
+시장 시나리오 & 실험 시작 전에 정하는 시장의 구조적 상태 & Supply-rich, Balanced, Tight, Stress \\
+실행 시나리오 $s$ & 선제계약 후 실제 운영에서 발생하는 불확실성의 실현 & Normal, Demand Surge, Network Disruption \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+시장 시나리오는 판매자, 소비자, 운송업체 수와 품목별 공급ㆍ수요ㆍ운송용량을 어떻게 구성했는가를 나타낸다.
+반면 실행 시나리오 $s$는 동일한 시장에서 선제계약이 끝난 뒤
+수요가 증가하거나 운송용량이 감소하는 상황을 나타낸다.
+
+이 구분이 중요한 이유는 경매주기 $\Delta$를 결정하는 시점 때문이다.
+플랫폼은 미래에 $s_1$, $s_2$, $s_3$ 중 어느 상황이 발생할지 미리 알 수 없으므로,
+실행 시나리오마다 서로 다른 경매주기를 사전에 선택하는 것은 적절하지 않다.
+대신 \textbf{하나의 시장 instance 안에서 가능한 실행 시나리오를 모두 고려하여
+그 시장에 대한 하나의 최적 경매주기}를 선택한다.
+
+\section{Robust Optimization과 $\Gamma$의 역할}
+
+\subsection{왜 강건성은 1단계 선제계약에 적용하는가}
+
+강건성이 1단계에 들어가는 이유는 의사결정 시점에 있다.
+선제계약량 $x^R_{iklt}$는 실제 수요폭증과 운송망 충격을 관측하기 전에 결정된다.
+따라서 플랫폼은 미래 수요가 정확히 얼마가 될지 알지 못한 상태에서
+얼마만큼의 운송용량을 미리 확보할지 결정해야 한다.
+
+이때 $\Gamma$는 명목수요만을 그대로 믿을 것인지,
+아니면 일부 소비자의 수요가 동시에 불리한 방향으로 변하는 상황까지
+추가로 방어할 것인지를 조절한다.
+반면 2단계의 실제 매칭결정은 수요와 운송망 상태가 실현된 이후 이루어지므로,
+이미 관측된 상황에 대응하는 recourse decision으로 처리한다.
+
+따라서 전체 구조는 다음과 같이 해석할 수 있다.
+
+\[
+\boxed{
+\text{Robust pre-contracting before uncertainty}
+\;\longrightarrow\;
+\text{Adaptive matching after realization}
+}
+\]
+
+\subsection{$\Gamma$ 실험설계}
+
+$\Gamma$의 기준값을 사전에 하나로 고정하여 ``정답''처럼 사용하지 않는다.
+먼저
+
+\[
+\Gamma=0
+\]
+
+을 nominal 또는 deterministic baseline으로 사용하여
+강건한 추가보호가 없는 상태에서 시장을 정상화한다.
+
+이후 소비자 수를 $n=|J|$라 할 때, 특정 중간값 하나만 임의로 선택하기보다
+$0\leq\Gamma\leq n$의 전체 보호수준을 균등하게 확인할 수 있도록
+
+\[
+\boxed{
+\Gamma/n\in\{0,0.25,0.50,0.75,1.00\}
+}
+\]
+
+의 다섯 수준을 비교한다.
+기준시장에서는 $|J|=8$이므로
+
+\[
+\boxed{\Gamma\in\{0,2,4,6,8\}}
+\]
+
+이 된다. 여기서 25\%, 50\%, 75\%는 실제 충격의 발생확률을 의미하지 않는다.
+이는 uncertainty budget의 전체 범위를 일정한 간격으로 탐색하여
+보호수준 증가에 따른 선제계약량과 목적함수의 변화를 체계적으로 비교하기 위한 sensitivity grid이다.
+
+\begin{table}[h!]
+\centering
+\caption{강건성 수준의 해석}
+\begin{tabular}{ccc}
+\toprule
+\textbf{수준} & \textbf{$\Gamma$} & \textbf{해석} \\
+\midrule
+Nominal & $0$ & 추가적인 robust protection 없음 \\
+Low protection & $0.25n$ & 낮은 수준의 동시 수요편차 보호 \\
+Moderate protection & $0.50n$ & 중간 수준의 동시 수요편차 보호 \\
+High protection & $0.75n$ & 높은 수준의 동시 수요편차 보호 \\
+Full protection & $n$ & 모든 소비자의 불리한 수요편차까지 보호 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+본 실험에서는 $\Gamma$ 변화에 따라 최소한 다음 결과가 변하는지 확인한다.
+
+\[
+\sum_{i,k,l,t}x^R_{iklt}, \qquad
+\text{Objective Value}, \qquad
+\text{Service Rate}, \qquad
+\text{Backlog}.
+\]
+
+특히 기존 실험에서 $\Gamma$가 결과에 영향을 주지 않는 현상이 관찰되었으므로,
+본격적인 시나리오 확장 이전에 robust 제약의 작동 여부를 검증해야 한다.
+
+\subsection{$\Gamma$가 영향을 주지 않을 때의 진단}
+
+$\Gamma$가 달라져도 결과가 동일한 경우에는
+``강건성이 필요 없다''고 바로 결론내리지 않는다.
+먼저 robust target과 실제 선제계약량의 관계를 확인한다.
+
+각 $(l,t)$에서 robust target을
+
+\[
+R_{lt}(\Gamma)
+=
+\sum_j \hat d_{jlt}
++
+\Gamma\eta_{lt}
++
+\sum_j\mu_{jlt}
+\]
+
+라고 하고, 실제 총 선제계약량을
+
+\[
+X^R_{lt}=\sum_{i,k}x^R_{iklt}
+\]
+
+라고 할 때,
+
+\[
+\mathrm{Slack}^{R}_{lt}
+=
+X^R_{lt}-R_{lt}(\Gamma)
+\]
+
+를 출력한다.
+
+\begin{table}[h!]
+\centering
+\caption{$\Gamma$ 무반응 현상의 진단 기준}
+\begin{tabular}{p{0.34\textwidth}p{0.50\textwidth}}
+\toprule
+\textbf{관찰결과} & \textbf{해석} \\
+\midrule
+$R_{lt}(\Gamma)$ 자체가 변하지 않음 & $\Gamma$ 전달 또는 수요편차 생성ㆍ집계 로직을 우선 점검 \\
+$R_{lt}(\Gamma)$는 변하지만 $X^R_{lt}$가 동일 & robust 하한보다 이미 많은 선제계약을 하고 있어 robust 제약이 non-binding일 가능성 \\
+$X^R_{lt}$도 변하지만 최종 목적값이 거의 동일 & 2단계의 공급 또는 운송용량이 충분하여 추가 선제계약의 경제적 효과가 작을 가능성 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{선제계약비용과 과잉계약 문제}
+
+강건성의 효과를 확인하려면 선제계약이 무조건 많이 이루어지는 구조를 피해야 한다.
+선제계약비용 $h^R$이 지나치게 낮으면,
+플랫폼은 $\Gamma$와 관계없이 가능한 한 많은 용량을 미리 계약하는 것이 유리할 수 있다.
+이 경우 robust target이 증가해도 이미 충분히 높은 $x^R$를 선택하고 있으므로
+$\Gamma$가 결과에 영향을 주지 않는다.
+
+반대로 선제계약비용이 지나치게 높으면,
+플랫폼은 미래 충격에 대비하기보다 미충족을 감수하는 쪽을 선택할 수 있다.
+따라서 목표는 단순히 $h^R$을 ``충격 penalty보다 크게'' 또는 ``작게'' 만드는 것이 아니라,
+\textbf{한 단위의 추가 선제계약이 가져오는 기대편익과 계약비용 사이에 실제 trade-off가 발생하도록}
+비용수준을 calibration하는 것이다.
+
+이를 위해 초기 실험에서는 seed별로 한 번 생성한 기준 선제계약비용 $h^{R,base}_{iklt}$를 고정하고,
+비용배율 $\lambda_h$만 변경하는 sensitivity analysis를 수행한다.
+
+\[
+h^{R,test}_{iklt}=\lambda_h h^{R,base}_{iklt},
+\qquad
+\lambda_h\in\{0.5,1,2,4\}.
+\]
+
+초기에는 비교적 넓은 배율을 사용하여 해가 실제로 변하는 구간을 찾고,
+필요할 경우 변화가 집중되는 구간을 더 세분화하여 추가 실험한다.
+이는 새로운 모형구조를 추가하기 위한 것이 아니라,
+어느 비용구간에서 $\Gamma$가 선제계약량을 실제로 변화시키는지 확인하고
+선제계약비용과 robust protection 간 trade-off를 검증하기 위한
+\textbf{모형 calibration 및 sensitivity analysis 절차}이다.
+
+\section{서비스율 제약의 검토}
+
+서비스율 제약은 목적함수만으로는 일부 수요가 과도하게 희생될 가능성을 막는
+최소 운영기준의 역할을 한다.
+다만 서비스율 하한이 지나치게 높으면
+해당 제약 자체가 많은 선제계약과 운송을 강제하여,
+robust 제약의 효과가 관찰되지 않을 수 있다.
+
+따라서 서비스율 제약을 즉시 제거하기보다는 다음과 같이 단계적으로 검토한다.
+
+\begin{enumerate}[label=\arabic*)]
+    \item 기준시장 $\Gamma=0$에서 서비스율 제약의 slack을 확인한다.
+    \item 서비스율 제약이 항상 binding인지 확인한다.
+    \item 필요할 경우 $SR^{\min}$ 수준을 몇 개의 값으로 변화시켜 $\Gamma$와의 상호작용을 확인한다.
+    \item 최종 연구에서는 서비스율을 핵심 목적함수가 아니라 최소 운영가능성 조건과 결과 KPI로 해석한다.
+\end{enumerate}
+
+이 과정의 목적은 서비스율을 연구의 중심으로 끌어오는 것이 아니라,
+서비스율 제약이 선제계약 및 최적 경매주기 선택을 인위적으로 지배하고 있지 않은지 확인하는 데 있다.
+
+\section{경매주기와 분석기간}
+
+경매주기 $\Delta$는 MILP 내부에서 직접 최적화하는 의사결정변수가 아니라
+outer-loop에서 후보를 하나씩 평가하는 설계변수이다.
+각 $\Delta$에 대해 일별 원자료를 해당 경매슬롯 단위로 재집계한 뒤,
+동일한 시장과 동일한 불확실성 조건에서 two-stage MILP를 해결한다.
+
+각 시장 instance에 대한 최적 경매주기는
+
+\[
+\boxed{
+\Delta^*
+=
+\arg\max_{\Delta\in\mathcal D}
+\Phi(\Delta)
+}
+\]
+
+로 정의한다.
+여기서 $\Phi(\Delta)$는 해당 경매주기에서 모형이 산출한 운영성과 목적함수 값이다.
+
+분석기간은 기존 30일 또는 60일보다 긴 기간을 사용하여
+수요충격, backlog 누적, 이후 회복과정을 충분히 관찰하는 것이 적절하다.
+최종 실험의 기준 calendar horizon으로
+
+\[
+\boxed{\mathcal T^{cal}=140\text{ days}}
+\]
+
+를 고려한다.
+140일은 20주에 해당하므로 추후 주 단위 패턴을 도입할 경우에도 확장성이 있다.
+다만 현재 기준 시나리오에서는 요일 선호나 지역효과를 사용하지 않으므로,
+140일을 사용하는 주된 이유는 \textbf{장기간의 누적효과와 여러 경매주기의 반복성과를 안정적으로 관찰하기 위함}이다.
+
+\section{Seed와 반복 시장의 역할}
+
+Seed는 새로운 종류의 시장 시나리오가 아니라,
+동일한 시장구조에서 난수로 생성되는 개별 수요ㆍ공급ㆍ비용 데이터를 재현하기 위한
+\textbf{난수 생성 시작값}이다.
+
+하나의 seed가 정해지면 해당 market instance의 일별 명목수요, 판매자 공급량,
+운송업체의 중량ㆍ부피 capacity, 가치ㆍ비용계수, 수요편차 및 실행 시나리오의 난수 실현값 등
+모든 외생적 raw data를 한 번 생성한 뒤 고정한다.
+이후 $\Gamma$, $\Delta$ 또는 선제계약비용의 sensitivity 배율을 비교할 때는
+비교대상이 되는 실험요인만 변경하고 나머지 raw data는 동일하게 유지한다.
+특히 $\Delta$가 달라져도 새로운 데이터를 생성하지 않고,
+동일한 일별 원자료를 각 경매주기에 맞게 재집계한다.
+
+예를 들어 동일한 Balanced 시장이라도 seed가 달라지면
+개별 소비자 수요, 판매자 공급량, 운송업체 capacity의 세부값은 달라질 수 있다.
+그러나 Balanced라는 시장의 전체적 수급특성은 유지되어야 한다.
+또한 동일 seed를 서로 다른 market regime에 적용할 경우에는 underlying random pattern은 유지하되,
+해당 regime을 구성하기 위한 공급ㆍ수요ㆍcapacity의 구조적 scaling만 다르게 적용한다.
+
+따라서 최종 단계에서 여러 시장상태를 비교할 때는
+동일한 seed 집합을 각 시장상태에 반복 적용하는 방식이 적절하다.
+
+예를 들어
+
+\[
+\mathcal Q=\{101,211,307,401,503\}
+\]
+
+를 사용할 경우,
+Supply-rich, Balanced, Tight, Stress 각각에 동일한 5개 seed를 적용하여
+총 20개의 synthetic market instance를 생성할 수 있다.
+
+이 과정은 최초 baseline validation이 끝난 뒤 실시한다.
+처음부터 20개 시장을 생성하면 $\Gamma$ 무반응 현상의 원인이
+모형구조인지 데이터 생성인지 구분하기 어렵기 때문이다.
+
+\section{전체 실험 순서}
+
+본 연구의 실험은 한 번에 모든 시장조건을 변화시키는 방식보다
+\textbf{모형 정상화 $\rightarrow$ 수급 calibration $\rightarrow$ 강건성 검증 $\rightarrow$
+선제계약비용 sensitivity analysis $\rightarrow$ 경매주기 최적화 $\rightarrow$ 시장확장}
+순으로 진행한다.
+
+\subsection{1단계: Baseline Market Calibration}
+
+첫 단계에서는 하나의 기준시장만 사용한다.
+참여자 규모는 $|I|=6$, $|J|=8$, $|K|=4$, $|L|=2$로 고정하고,
+판매자 3명은 품목 $A$, 나머지 3명은 품목 $B$를 공급하도록 한다.
+
+이 단계에서는 $\Gamma=0$으로 설정하여
+강건한 추가보호가 없는 nominal market을 먼저 정상화한다.
+수요, 공급, 중량ㆍ부피 capacity 및 선제계약비용을 조정하면서
+다음 조건을 만족하는 데이터를 찾는다.
+
+\begin{itemize}
+    \item 대부분의 경우 feasible solution이 존재한다.
+    \item 모든 수요가 항상 100\% 충족되는 과잉공급 시장이 아니다.
+    \item 반대로 모든 경매주기에서 구조적으로 큰 backlog가 발생하는 과소공급 시장도 아니다.
+    \item 짧은 경매주기와 긴 경매주기 사이에 목적함수의 차이가 발생한다.
+    \item 선제계약량이 계약상한에 항상 붙어 있지 않는다.
+\end{itemize}
+
+즉, 첫 단계의 목적은 ``최적 결과를 얻는 것''이 아니라
+\textbf{이후 실험이 의미 있게 반응할 수 있는 중간 수준의 기준시장을 만드는 것}이다.
+
+\subsection{2단계: $\Gamma$ Validation}
+
+기준시장이 정상화되면 동일한 시장 데이터에서
+
+\[
+\Gamma=0,\quad 2,\quad 4,\quad 6,\quad 8
+\]
+
+을 적용한다.
+이때 가장 먼저 확인할 것은 최종 목적함수 자체가 아니라
+robust target, 실제 선제계약량, robust constraint slack이다.
+
+$\Gamma$ 증가에 따라 robust target이 증가하는지,
+그리고 그 증가가 실제 $x^R$에 반영되는지를 확인한다.
+반영되지 않는다면 선제계약비용, 서비스율 제약, 계약상한,
+공급 및 운송 capacity 가운데 어느 요소가 선제계약을 지배하고 있는지 분석한다.
+
+이 단계를 통과해야 이후 ``강건성 수준에 따른 성과 차이''를 해석할 수 있다.
+
+\subsection{3단계: Pre-contracting Cost Sensitivity Analysis}
+
+$\Gamma$가 의도한 대로 작동하는 것이 확인되면,
+동일한 seed와 동일한 market instance에서 기준 선제계약비용을 유지한 채
+$\lambda_h\in\{0.5,1,2,4\}$의 배율만 변경하여 선제계약비용의 민감도를 확인한다.
+이 단계에서는 선제계약비용이 너무 낮아 과잉계약을 유도하거나,
+반대로 너무 높아 robust protection 자체를 무의미하게 만드는 구간이 있는지를 확인한다.
+초기 넓은 범위의 실험에서 변화구간이 확인되면 그 구간만 세분화하여 추가 분석한다.
+
+\subsection{4단계: Auction Cycle Optimization}
+
+$\Gamma$가 의도한 대로 작동하는 것이 확인되면
+각 강건성 수준에서 경매주기 후보를 완전열거한다.
+
+\[
+\Delta\in\mathcal D.
+\]
+
+각 $\Delta$마다 동일한 일별 원자료를 재집계하여 MILP를 풀고,
+목적함수 값을 비교한다.
+그 결과 가장 큰 목적함수를 가지는 경매주기를
+해당 시장 instance와 강건성 수준에서의 최적 경매주기 $\Delta^*$로 정의한다.
+
+이 단계의 핵심은 특정 실행 시나리오 $s$ 하나에 대해서만 $\Delta^*$를 찾는 것이 아니라,
+동일한 시장에서 발생 가능한 실행 시나리오를 함께 고려하여
+\textbf{사전에 적용할 하나의 경매 운영주기}를 도출하는 것이다.
+
+\subsection{5단계: Market Regime Expansion}
+
+기준시장과 $\Gamma$--$\Delta$ 구조가 정상적으로 작동한 이후에
+시장 수급상태를 확장한다.
+시장상태는 예를 들어 다음과 같이 구성할 수 있다.
+
+\begin{table}[h!]
+\centering
+\caption{확장실험의 시장상태}
+\begin{tabular}{cl}
+\toprule
+\textbf{시장상태} & \textbf{의도한 해석} \\
+\midrule
+Supply-rich & 공급 및 운송 capacity에 상대적 여유가 있는 시장 \\
+Balanced & 수요와 공급ㆍ운송 capacity가 비교적 균형적인 시장 \\
+Tight & 수요가 공급 및 운송 capacity에 근접한 시장 \\
+Stress & 수요가 공급 또는 운송 capacity를 압박하는 시장 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+각 시장상태는 지역 또는 운송업체 선호를 통해 만드는 것이 아니라,
+\textbf{품목별 수요량, 공급량 및 운송 capacity의 상대적 규모}를 조정하여 구성한다.
+
+각 상태에 동일한 5개 seed를 적용하면
+
+\[
+4\text{ market regimes}\times5\text{ seeds}
+=
+20\text{ market instances}
+\]
+
+가 된다.
+각 market instance에서 $\Gamma$와 $\Delta$를 동일한 방식으로 평가한다.
+
+\subsection{6단계: Cross-Market Evaluation}
+
+각 market instance에서 도출된 최적 경매주기를 비교하여
+시장상태에 따라 $\Delta^*$가 체계적으로 달라지는지 확인한다.
+또한 특정 시장에서 선택한 경매주기를 다른 seed 또는 다른 시장에 적용했을 때의
+opportunity loss를 Regret으로 평가할 수 있다.
+
+이 단계는 ``평균 목적함수가 가장 크다''는 사실만으로 강건성을 주장하기보다,
+선택된 경매주기가 다른 synthetic market에서도 얼마나 안정적으로 성과를 유지하는지를 확인하기 위한 단계이다.
+
+\section{최종 실험구조 요약}
+
+\begin{longtable}{p{0.23\textwidth}p{0.62\textwidth}}
+\caption{최종 실험설계 요약} \\
+\toprule
+\textbf{항목} & \textbf{설정 및 원칙} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{항목} & \textbf{설정 및 원칙} \\
+\midrule
+\endhead
+
+연구초점 & 시장논리에 따른 N:M matching, robust 선제계약, 최적 경매주기 도출 \\
+참여자 비율 & 판매자 : 소비자 : 운송업체 $=1.5:2:1$, 기준 규모 $6:8:4$ \\
+품목 수 & 2개. 품목별 우선순위 없음 \\
+품목 차이 & 중량ㆍ부피 소모특성만 차별화 \\
+판매자--품목 관계 & 판매자별 전문품목을 부여하고 비취급 품목의 공급량을 0으로 설정 \\
+지역ㆍ거리 & 모형에서 제외 \\
+가격 & Core MILP의 주된 연구대상으로 사용하지 않고 MMTR--MVCG 사후 가격청산 유지 \\
+1단계 & 불확실성 실현 이전 robust pre-contracting \\
+2단계 & 실제 수요 및 운송망 상태 관측 이후 adaptive matching \\
+강건성 수준 & $\Gamma/n=0,0.25,0.50,0.75,1.00$ 비교. 기준시장에서는 $0,2,4,6,8$ \\
+경매주기 & 동일 일별 데이터에 대해 후보 $\Delta$를 outer-loop에서 비교 \\
+Calendar horizon & 최종 실험에서 140일 고려 \\
+Seed & 동일 seed에서는 raw data를 고정하고 실험요인만 변경하여 반복성과 재현성 확보 \\
+시장 확장 & Baseline validation 이후 Supply-rich, Balanced, Tight, Stress로 확장 \\
+핵심 결과 & 선제계약량, 목적함수, 서비스율, backlog, 최적 경매주기, Regret \\
+\bottomrule
+\end{longtable}
+
+\section{연구 시나리오의 최종 해석}
+
+본 연구의 시나리오는 ``현실의 특정 지역 화물시장''을 모사하는 것이 아니라,
+5PL 플랫폼의 핵심 구조를 통제된 환경에서 검증하기 위한 synthetic market이다.
+따라서 외부 지역선호, 노선선호, 품목우선순위와 같은 요소를 제거하고
+판매자 공급, 소비자 수요, 운송업체 capacity라는 세 요소의 상대적 균형에 집중한다.
+
+플랫폼은 실제 수요충격과 운송망 충격을 알기 전에
+robust optimization을 이용하여 선제계약량을 정한다.
+이후 실제 상황이 실현되면 N:M matching을 수행한다.
+동일한 시장에 대해 경매주기 $\Delta$를 바꾸어 반복적으로 최적화하고,
+목적함수를 최대화하는 $\Delta^*$를 해당 시장의 최적 경매주기로 해석한다.
+
+실험은 처음부터 복잡한 시장시나리오를 다수 생성하는 방식으로 시작하지 않는다.
+먼저 하나의 baseline market에서 $\Gamma=0$의 nominal case를 정상화하고,
+수요와 공급이 지나치게 치우치지 않도록 수급수준을 calibration한다.
+그 다음 $\Gamma/n=0,0.25,0.50,0.75,1.00$을 통해 robust 제약이 실제 선제계약에 영향을 주는지 검증하고,
+선제계약비용에 대한 sensitivity analysis를 수행한다.
+이후 경매주기 최적화를 수행하고,
+마지막으로 서로 다른 수급상태와 seed로 시장을 확장한다.
+
+따라서 본 연구의 실험 논리는 다음과 같이 요약할 수 있다.
+
+\[
+\boxed{
+\text{Baseline Market Calibration}
+\rightarrow
+\Gamma\text{ Validation}
+\rightarrow
+h^R\text{ Sensitivity}
+\rightarrow
+\Delta\text{ Optimization}
+\\
+\rightarrow
+\text{Market Regime Expansion}
+\rightarrow
+\text{Cross-Market Evaluation}
+}
+\]
+
+이 순서를 따르면 특정 실험결과가 모형의 구조에서 발생한 것인지,
+강건성 수준에서 발생한 것인지,
+경매주기에서 발생한 것인지,
+또는 단순한 random seed의 우연에서 발생한 것인지를 단계적으로 분리하여 해석할 수 있다.
+
+\end{document}

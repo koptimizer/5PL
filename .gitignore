@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+*:com.dropbox.attrs
+*:Zone.Identifier
+.dropbox*
+.DS_Store
+Thumbs.db
+desktop.ini
+sources/results/logs/
+sources/results/iis/
+docs/tex/*.aux
+docs/tex/*.log
+docs/tex/*.out
+docs/tex/*.toc
+docs/tex/*.synctex.gz

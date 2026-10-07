@@ -1,0 +1,879 @@
+
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{kotex}
+\usepackage[margin=21mm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{setspace}
+\usepackage[hidelinks]{hyperref}
+
+\setstretch{1.15}
+\setlength{\parindent}{1em}
+\setlength{\parskip}{0.35em}
+\renewcommand{\arraystretch}{1.25}
+\setlist[itemize]{leftmargin=1.5em,itemsep=2pt,topsep=4pt}
+\setlist[enumerate]{leftmargin=1.7em,itemsep=2pt,topsep=4pt}
+
+\newcommand{\Tcal}{\mathcal T^{\mathrm{cal}}}
+\newcommand{\Scen}{\mathcal S}
+\newcommand{\Dset}{\mathcal D}
+\newcommand{\Rset}{\mathcal R}
+\newcommand{\Aset}{\mathcal A}
+\newcommand{\Eset}{\mathcal E}
+
+\title{\textbf{5PL 미들마일 플랫폼의 강건 선제계약과 최적 경매주기 설계}}
+\author{유재우}
+\date{2026년 9월 2일}
+
+\begin{document}
+\maketitle
+
+\section{연구 목적과 범위}
+
+본 연구의 핵심 연구질문은 다음과 같다.
+
+\begin{quote}
+\textbf{불확실한 수요와 운송망 충격 하에서 5PL 미들마일 플랫폼은 얼마나 많은 운송용량을 선제계약하고,
+경매를 얼마나 자주 열어야 하는가?}
+\end{quote}
+
+본 연구는 5PL 미들마일 플랫폼을 판매자, 구매자, 운송업체가 참여하는 다대다(N:M) 시장으로 본다.
+플랫폼은 실제 수요와 운송망 상태를 완전히 알기 전에 판매자--운송업체 간 선제계약용량을 결정하고,
+이후 실행조건이 실현되면 실제 가용 운송용량 안에서 판매자--구매자--운송업체 간 거래를 매칭한다.
+경매주기 $\Delta$는 LP 내부의 의사결정변수가 아니라, 가능한 경매주기를 외부에서 완전열거하여 비교하는
+\textbf{outer-loop 설계변수}로 둔다.
+
+본 연구는 가격결정 자체를 핵심 연구대상으로 두지 않는다.
+Core optimization은 거래로부터 발생하는 순운영잉여(net operational surplus)를 최대화하는 매칭 및 용량계획 문제이며,
+가격청산은 최적 매칭 이후 MMTR--MVCG 규칙을 이용하는 별도의 post-processing 단계로 둔다.
+따라서 본문에서 ``목적함수 값''은
+\textbf{거래잉여에서 선제계약비용, 대기비용을 차감한 순운영잉여}를 의미한다.
+
+\section{Baseline 문제설정}
+
+\subsection{의도적으로 제외하는 요소}
+
+본 연구는 다음 요소를 제외한다.
+
+\begin{table}[h!]
+\centering
+\caption{Baseline 모형에서 제외하는 요소}
+\begin{tabularx}{0.94\textwidth}{@{}p{0.31\textwidth}X@{}}
+\toprule
+\textbf{요소} & \textbf{처리} \\
+\midrule
+품목별 우선순위 및 납기등급 & 사용하지 않음. 두 품목은 물리적 중량ㆍ부피만 다르게 설정 \\
+지역ㆍ거리ㆍ노선 선호 & 사용하지 않음 \\
+판매자--구매자 사전 pair & 사용하지 않음 \\
+공급부족에 따른 가격인상 & 다루지 않음 \\
+시장유형별 비교 & Baseline 이후 확장실험으로 이동 \\
+Rolling horizon / multi-stage & Baseline 이후 확장실험으로 이동 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Baseline 시장구조}
+
+판매자, 구매자, 운송업체의 비율은 $1.5:2:1$을 기준으로 하여
+
+\[
+|I|=6,\qquad |J|=8,\qquad |K|=4
+\]
+
+로 둔다. 품목은 $A,B$ 두 개만 사용한다.
+
+판매자 $i_1,i_2,i_3$은 품목 $A$를 공급하고,
+판매자 $i_4,i_5,i_6$은 품목 $B$를 공급한다.
+반면 모든 구매자는 두 품목 모두를 구매할 수 있다.
+동일 품목에서 한 판매자는 여러 구매자에게 공급할 수 있고,
+한 구매자도 여러 판매자로부터 물량을 받을 수 있으므로 품목별 시장은 명확한 N:M 구조를 가진다.
+
+\[
+I_A=\{i_1,i_2,i_3\},\qquad
+I_B=\{i_4,i_5,i_6\}.
+\]
+
+판매자 또는 구매자의 거래상대 수를 1개로 제한하는 별도 제약은 두지 않는다.
+
+\begin{table}[h!]
+\centering
+\caption{Baseline 시장의 참여자와 품목}
+\begin{tabular}{cccc}
+\toprule
+\textbf{구분} & \textbf{기호} & \textbf{규모} & \textbf{설정} \\
+\midrule
+판매자 & $I$ & 6 & $A$ 판매자 3명, $B$ 판매자 3명 \\
+구매자 & $J$ & 8 & 모든 구매자가 $A,B$ 구매 가능 \\
+운송업체 & $K$ & 4 & 두 품목 모두 운송 가능 \\
+품목 & $L$ & 2 & $A,B$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{품목의 물리적 특성}
+
+품목 간 중요도, 우선순위는 두지 않고 중량 및 부피로 물리적 특성만 다르게 둔다.
+
+\begin{table}[h!]
+\centering
+\caption{품목별 물리적 특성}
+\begin{tabular}{cccc}
+\toprule
+\textbf{품목} & \textbf{해석} & $w_l$ & $v_l$ \\
+\midrule
+$A$ & 중량소모가 큰 품목 & 10 & 2 \\
+$B$ & 부피소모가 큰 품목 & 2 & 10 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{정보구조와 실행 시나리오}
+
+Baseline은 \textbf{two-stage} 정보구조를 유지한다.
+1단계의 선제계약은 실행조건을 알기 전에 결정하고,
+2단계의 실행매칭은 어떤 실행 시나리오가 실현되었는지를 확인한 후 결정한다.
+
+본 Baseline에서는 계산구조를 단순하게 유지하기 위해,
+실행 시나리오 $s$를 \textbf{2단계 시작 시점에 식별되는 전체 운영기간의 실행조건(regime)}으로 해석한다.
+따라서 2단계에서 시나리오 $s$가 주어지면 해당 시나리오의 수요증가율과 운송용량 감소율을 알고 있다고 가정한다.
+이 가정은 two-stage 구조와 일관되며, 충격이 시간에 따라 순차적으로 관측되는 상황은
+향후 rolling-horizon 또는 multi-stage 확장실험으로 분리한다.
+
+\begin{table}[h!]
+\centering
+\caption{Baseline 실행 시나리오}
+\begin{tabular}{clccc}
+\toprule
+$s$ & \textbf{설명} & $\omega_s$ & $\theta_s$ & $\gamma_s$ \\
+\midrule
+$s_0$ & No-shock & 0.60 & 0 & 0 \\
+$s_1$ & Demand Surge & 0.20 & 0.15 & 0 \\
+$s_2$ & Network Disruption & 0.20 & 0 & 0.15 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+여기서 $\omega_s$는 실제 확률로 해석하지 않고 Baseline 실험에서 세 실행조건의 상대적 중요도를 나타내는 평가가중치로 사용한다.
+보다 현실적인 일시적 충격경로와 경험적 확률은 확장실험에서 다룬다.
+
+\section{집합과 경매주기}
+
+\begin{longtable}{@{}p{0.24\textwidth}p{0.67\textwidth}@{}}
+\toprule
+\textbf{기호} & \textbf{의미} \\
+\midrule
+$I$ & 판매자 집합, $|I|=6$ \\
+$J$ & 구매자 집합, $|J|=8$ \\
+$K$ & 운송업체 집합, $|K|=4$ \\
+$L=\{A,B\}$ & 품목 집합 \\
+$\Scen=\{s_0,s_1,s_2\}$ & 실행 시나리오 집합 \\
+$\Rset=\{1,\ldots,\Tcal\}$ & 일 단위 기본 캘린더 집합 \\
+$\Tcal$ & 전체 분석기간, Baseline에서는 140일 \\
+$\Dset=\{1,\ldots,28\}$ & Baseline 경매주기 후보집합(일) \\
+$T(\Delta)=\{1,\ldots,N(\Delta)\}$ & 경매주기 $\Delta$에서 생성되는 경매슬롯 집합 \\
+$\Aset_t(\Delta)$ & 경매에 포함되는 날짜의 집합으로, 경매주기 $\Delta$ = 7이면 $\Aset_1(7) = \{1,2,3,4,5,6,7\} ,\ldots$   \\
+$\Eset$ & 가능한 거래조합의 집합으로 $(i,j,k,l)$로 표현\\
+\bottomrule
+\end{longtable}
+
+Baseline의 거래 가능 조합 집합은 판매자의 품목 전문화 조건을 반영하여 다음과 같이 정의한다.
+
+\[
+\Eset=
+\left\{
+(i,j,k,l):
+i\in I_l,\;
+j\in J,\;
+k\in K
+\right\}
+\]
+
+지역, 거리, 노선, 판매자--구매자 선호도는 $\Eset$의 생성조건에 사용하지 않는다.
+
+경매횟수와 슬롯길이는
+
+\begin{align}
+N(\Delta)&=\left\lceil\frac{\Tcal}{\Delta}\right\rceil,\\
+\Aset_t(\Delta)
+&=
+\left\{
+r\in\Rset:(t-1)\Delta+1\le r\le \min(t\Delta,\Tcal)
+\right\},\\
+\ell_t^\Delta&=|\Aset_t(\Delta)|,\\
+\tau_t^\Delta&=\frac{\ell_t^\Delta-1}{2}
+\end{align}
+
+로 둔다.
+$\tau_t^\Delta$는 해당 경매슬롯 안에서 거래 물량이 평균적으로 기다리는 시간. 예로, 7일 동안 하루 단위로 수요가 발생하고 7일째 경매한다고 생각하면 첫날과 마지막날 대기 시간이 다르기 때문에 평균으로 반영한다.
+
+\section{일 단위 자료와 Baseline 데이터 생성}
+
+경매주기가 달라질 때 새로운 시장데이터를 생성하지 않고,
+같은 140일 raw data를 경매슬롯 단위로 재집계한다.
+
+\subsection{일 단위 명목수요}
+
+구매자 $j$, 품목 $l$, 날짜 $r$의 명목수요는
+
+\[
+\hat d_{jlr}\sim \mathrm{Poisson}(10)
+\]
+
+으로 생성한다. 구매자 한 명이 한 품목에 대해 하루 평균 10단위 수요를 요구한다는 의미이다. 10은 시장 크기를 정하기 위한 기준값으로 사용한다.
+두 품목은 동일한 수요분포를 사용하여 품목 자체에 우선순위를 부여하지 않는다.
+
+품목별 일일 총명목수요를
+
+\[
+D_{lr}=\sum_{j\in J}\hat d_{jlr}
+\]
+
+로 둔다.
+
+\subsection{판매자 공급량}
+
+Baseline에서 품목별 총공급은 명목수요보다 지나치게 크거나 작지 않도록
+공급여유계수
+
+\[
+\rho^S=1.25
+\]
+
+를 사용하여
+
+\[
+S_{lr}^{\mathrm{tar}}=\left\lceil \rho^S D_{lr}\right\rceil
+\]
+
+로 정한다.
+해당 품목을 판매하는 세 판매자 사이의 공급량은 독립적으로 크게 흔들리게 하지 않고,
+가중치 $u_{ilr}\sim U(0.9,1.1)$를 정규화하여 배분한다.
+따라서 seed가 바뀌어도 특정 판매자 한 명의 우연한 공급부족이 시장 전체를 지배하는 현상을 줄인다.
+
+판매하지 않는 품목에 대해서는
+
+\[
+\hat s_{ilr}=0,\qquad i\notin I_l
+\]
+
+로 둔다.
+
+\subsection{운송업체 중량ㆍ부피용량}
+
+품목별 수요구성을 반영한 하루의 명목 중량 및 부피소요량을
+
+\begin{align}
+W_r^{D}&=\sum_{j\in J}\sum_{l\in L}w_l\hat d_{jlr},\\
+V_r^{D}&=\sum_{j\in J}\sum_{l\in L}v_l\hat d_{jlr}
+\end{align}
+
+로 계산한다.
+Baseline에서는 운송용량여유계수
+
+\[
+\rho^C=1.25
+\]
+
+를 사용하여 전체 운송용량을
+
+\begin{align}
+C_r^{W,\mathrm{tar}}&=\left\lceil\rho^C W_r^{D}\right\rceil,\\
+C_r^{V,\mathrm{tar}}&=\left\lceil\rho^C V_r^{D}\right\rceil
+\end{align}
+
+로 정한다.
+각 운송업체의 용량은 $U(0.9,1.1)$ 가중치를 정규화하여 배분한다.
+이렇게 하면 중량 또는 부피제약 한쪽이 항상 느슨해지는 것을 방지하면서,
+두 품목이 공통 물리용량을 두고 경쟁하도록 만들 수 있다.
+
+\subsection{수요편차와 강건성 수준}
+
+일 단위 최대 수요증가편차는 명목수요의 20\%로 설정한다.
+
+\[
+\xi_{jlr}=0.20\,\hat d_{jlr}.
+\]
+
+실험에서는 모든 품목과 슬롯에 동일한 uncertainty budget을 적용하고,
+
+\[
+\Gamma\in\{0,2,4,6,8\}
+\]
+
+을 비교한다.
+이는 실제 발생확률을 의미하지 않으며,
+$0\le\Gamma\le |J|$의 전체 보호수준을 25\% 간격으로 탐색하는 sensitivity grid이다.
+따라서 $\Gamma=0$은 nominal protection,
+$\Gamma=8$은 모든 구매자의 최대 증가편차를 동시에 고려하는 full protection을 의미한다.
+\\\\\\\\\\\\\\\\\\\\
+
+\subsection{경제 파라미터}
+
+가격ㆍ비용 파라미터는 지역 또는 seller--buyer pair 선호가 생기지 않도록 단순화한다.
+실험에서는 한 seed에서 아래 값을 한 번 생성한 뒤 전체 140일 동안 고정한다.
+
+\begin{table}[h!]
+\centering
+\caption{Baseline 경제 파라미터}
+\begin{tabularx}{0.94\textwidth}{@{}p{0.26\textwidth}p{0.23\textwidth}X@{}}
+\toprule
+\textbf{파라미터} & \textbf{Baseline 값} & \textbf{의미} \\
+\midrule
+$a_{jl}$ & $U(120,180)$ & 구매자 단위가치(WTP) \\
+$b_{il}$ & $U(60,100)$ & 판매자 단위요구비용(WTA) \\
+$c_{kl}$ & $U(15,35)$ & 운송업체--품목별 실행 운송비용 \\
+$h^R_{ikl}$ & $U(10,14)$ & 선제계약 단위비용 \\
+$c^{\mathrm{wait}}$ & $0.5$ & 단위물량ㆍ1일당 대기비용 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+본 수치는 실제 화폐단위의 실증 추정치가 아니라
+모형의 trade-off를 확인하기 위한 Baseline 수치이다.
+
+\subsection{Seed}
+
+Baseline 반복실험의 master seed는
+
+\[
+\mathcal Q=\{101,211,307,401,503\}
+\]
+
+로 둔다.
+하나의 seed가 정해지면 해당 seed의
+수요, 판매자 배분가중치, 운송업체 용량배분가중치, 경제 파라미터 등
+모든 외생적 raw data를 한 번 생성하고 고정한다.
+
+동일 seed에서 $\Gamma$, $\Delta$, 선제계약비용 sensitivity를 비교할 때는
+비교대상인 실험요인만 변경하고 나머지 데이터는 동일하게 유지한다.
+구현 시에는 seed로부터 수요, 공급배분, 용량배분, 경제 파라미터의 독립 substream을 생성하여,
+한 데이터 생성모듈의 수정이 다른 난수열까지 바꾸지는 않는다.
+
+\section{경매주기별 데이터 재집계}
+
+고정된 $\Delta$에서 일 단위 원자료를 다음과 같이 재집계한다.
+
+\begin{align}
+\hat d^\Delta_{jlt}
+&=\sum_{r\in\Aset_t(\Delta)}\hat d_{jlr},&
+\xi^\Delta_{jlt}
+&=\sum_{r\in\Aset_t(\Delta)}\xi_{jlr},\\
+\hat s^\Delta_{ilt}
+&=\sum_{r\in\Aset_t(\Delta)}\hat s_{ilr},&
+cap^{W,\Delta}_{kt}
+&=\sum_{r\in\Aset_t(\Delta)}cap^W_{kr},\\
+cap^{V,\Delta}_{kt}
+&=\sum_{r\in\Aset_t(\Delta)}cap^V_{kr}.&&
+\end{align}
+
+실행 시나리오 $s$의 수요증가는
+
+\[
+d^{\mathrm{real},\Delta}_{jlts}
+=
+(1+\theta_s)\hat d^\Delta_{jlt}
+\]
+
+로 두고, 실행단계 운송용량은 $(1-\gamma_s)$를 곱하여 감소시킨다.
+
+\section{Parameter}
+
+\begin{longtable}{@{}p{0.28\textwidth}p{0.64\textwidth}@{}}
+\toprule
+\textbf{기호} & \textbf{의미} \\
+\midrule
+$\hat d^\Delta_{jlt}$ & 구매자 $j$, 품목 $l$, 슬롯 $t$의 명목수요 \\
+$\xi^\Delta_{jlt}$ & 명목수요의 최대 증가편차 \\
+$\Gamma$ & Baseline에 공통으로 적용하는 budget of uncertainty \\
+$\hat s^\Delta_{ilt}$ & 판매자 $i$의 품목 $l$ 공급가능량 \\
+$cap^{W,\Delta}_{kt},cap^{V,\Delta}_{kt}$ & 운송업체 $k$의 중량ㆍ부피용량 \\
+$w_l,v_l$ & 품목 $l$의 단위중량ㆍ단위부피 \\
+$a_{jl}$ & 구매자 단위가치 \\
+$b_{il}$ & 판매자 단위요구비용 \\
+$c_{kl}$ & 실행 운송 단위비용 \\
+$h^R_{ikl}$ & 선제계약 단위비용 \\
+$c^{\mathrm{wait}}$ & 단위물량ㆍ단위시간 대기비용 \\
+$\theta_s$ & 시나리오 $s$의 수요증가율 \\
+$\gamma_s$ & 시나리오 $s$의 운송용량 감소율 \\
+$\omega_s$ & 실행 시나리오 평가가중치 \\
+$\ell_t^\Delta$ & 슬롯 $t$의 실제 길이(일) \\
+$\tau_t^\Delta$ & 슬롯 $t$의 평균 매칭대기시간 \\
+\bottomrule
+\end{longtable}
+
+\section{의사결정변수}
+
+\begin{longtable}{@{}p{0.28\textwidth}p{0.64\textwidth}@{}}
+\toprule
+\textbf{변수} & \textbf{의미} \\
+\midrule
+$x^R_{iklt}\ge0$ & 실행 시나리오가 실현되기 전에 확보하는 선제계약용량 \\
+$\eta_{lt}\ge0,\mu_{jlt}\ge0$ & budgeted uncertainty robust counterpart 보조변수 \\
+$y_{ijklts}\ge0$ & 시나리오 $s$의 실제 운송물량 \\
+$m_{jlts}\ge0$ & 슬롯 $t$ 말에 남아 다음 슬롯으로 이월되는 수요 \\
+\bottomrule
+\end{longtable}
+
+1단계 변수 $x^R,\eta,\mu$에는 시나리오 첨자 $s$를 사용하지 않는다.
+따라서 모든 실행 시나리오에서 동일한 선제계약결정을 사용하며,
+별도의 1단계 non-anticipativity 등식 없이 here-and-now 의사결정을 보장한다.
+
+\section{고정 경매주기 $\Delta$의 Core two-stage robust optimization}
+
+\subsection{목적함수}
+
+고정된 $\Delta$의 최적 목적값을 $\Phi(\Delta)$라 한다.
+본 목적함수는 구매자 가치에서 판매자 비용과 실행 운송비용을 차감한 거래잉여에서
+선제계약비용, 경매대기비용 및 이월대기비용을 차감한다.
+
+\begin{align}
+\Phi(\Delta)=\max\quad
+&-\sum_{t\in T(\Delta)}
+\sum_{i\in I}\sum_{k\in K}\sum_{l\in L}
+h^R_{ikl}x^R_{iklt}
+\nonumber\\
+&+\sum_{s\in\Scen}\omega_s
+\Bigg[
+\sum_{t\in T(\Delta)}
+\sum_{(i,j,k,l)\in\Eset}
+\left(
+a_{jl}-b_{il}-c_{kl}\right)y_{ijklts}
+\nonumber\\
+&\hspace{31mm}
+-\sum_{t\in T(\Delta)}\sum_{j\in J}\sum_{l\in L}c^{\mathrm{wait}}\tau_t^\Delta d_{jlts}^{real,\Delta}
+\nonumber\\
+&\hspace{31mm}
+-\sum_{t\in T(\Delta)}
+\sum_{j\in J}\sum_{l\in L}
+c^{\mathrm{wait}}\ell_t^\Delta m_{jl,t-1,s}
+\Bigg].
+\label{eq:obj}
+\end{align}
+
+슬롯 $t$에 새로 유입된 수요는 해당 경매가 열릴 때까지 평균 $\tau_t^\Delta$일만큼 기다린 것으로 계산한다.
+이전 슬롯에서 미충족되어 이원될 수요는 현재 슬롯 동안 추가로 $\ell_t^\Delta$일 기다리는 것으로 계산한다.
+
+\subsection{1단계 강건 선제계약}
+
+품목--슬롯별 강건 수요커버 제약은 다음과 같다.
+
+\begin{align}
+\sum_{i\in I}\sum_{k\in K}x^R_{iklt}
+&\ge
+\sum_{j\in J}\hat d^\Delta_{jlt}
++\Gamma\eta_{lt}
++\sum_{j\in J}\mu_{jlt},
+&&\forall l,t,
+\label{eq:robust-cover}\\
+\eta_{lt}+\mu_{jlt}
+&\ge
+\xi^\Delta_{jlt},
+&&\forall j,l,t.
+\label{eq:robust-dual}
+\end{align}
+
+선제계약은 실제로 존재하는 판매자 공급량과 운송업체의 명목 물리용량을 초과할 수 없다.
+
+\begin{align}
+\sum_{k\in K}x^R_{iklt}
+&\le
+\hat s^\Delta_{ilt},
+&&\forall i,l,t,
+\label{eq:pre-supply}\\
+\sum_{i\in I}\sum_{l\in L}w_lx^R_{iklt}
+&\le
+cap^{W,\Delta}_{kt},
+&&\forall k,t,
+\label{eq:pre-weight}\\
+\sum_{i\in I}\sum_{l\in L}v_lx^R_{iklt}
+&\le
+cap^{V,\Delta}_{kt},
+&&\forall k,t.
+\label{eq:pre-volume}
+\end{align}
+
+Baseline에서는 별도의 명목수요 대비 계약상한 $\Omega$를 사용하지 않는다.
+과잉계약은 판매자 공급, 운송업체 물리용량 및 양의 선제계약비용 $h^R$로 통제한다.
+
+\subsection{2단계 실행매칭}
+
+초기 이월수요는 0으로 둔다.
+
+\begin{equation}
+m_{jl0s}=0,
+\qquad \forall j,l,s.
+\label{eq:init-backlog}
+\end{equation}
+
+각 구매자--품목의 실현수요와 이전 이월수요는 현재 운송되거나 다음 슬롯으로 이월된다. 수요충격 \(\theta_s\)는 별도의 추가제약으로 표현하지 않고, 실현수요 \(d^{real,\Delta}_{jlts}=(1+\theta_s)\hat d^\Delta_{jlt}\)를 통해 수요균형 제약의 우변에 반영된다.
+
+\begin{equation}
+\sum_{(i,k):(i,j,k,l)\in\Eset}y_{ijklts}
++m_{jlts}
+=
+d^{\mathrm{real},\Delta}_{jlts}
++m_{jl,t-1,s},
+\qquad
+\forall j,l,t,s.
+\label{eq:demand-balance}
+\end{equation}
+
+실제 운송량은 1단계에서 확보한 판매자--운송업체--품목별 계약량을 초과할 수 없다.
+
+\begin{equation}
+\sum_{j:(i,j,k,l)\in\Eset}y_{ijklts}
+\le x^R_{iklt},
+\qquad
+\forall i,k,l,t,s.
+\label{eq:contract-use}
+\end{equation}
+
+운송망 충격은 실행단계의 실제 물리용량에만 적용한다.
+
+\begin{align}
+\sum_{(i,j,l):(i,j,k,l)\in\Eset}w_ly_{ijklts}
+&\le
+(1-\gamma_s)cap^{W,\Delta}_{kt},
+&&\forall k,t,s,
+\label{eq:run-weight}\\
+\sum_{(i,j,l):(i,j,k,l)\in\Eset}v_ly_{ijklts}
+&\le
+(1-\gamma_s)cap^{V,\Delta}_{kt},
+&&\forall k,t,s.
+\label{eq:run-volume}
+\end{align}
+
+선제계약은 계약상 사용한도이고,
+$\gamma_s$는 실제 실행단계의 물리적 운송능력 저하를 나타낸다.
+
+변수영역은
+
+\begin{align}
+&x^R_{iklt},\eta_{lt},\mu_{jlt},y_{ijklts},m_{jlts},y_{ijklts}\ge0
+&&\forall (i,j,k,l)\in\Eset,t,s,
+\end{align}
+
+이다.
+
+\subsection{서비스율의 처리}
+
+Baseline에서는 서비스율 하한을 hard constraint로 두지 않는다.
+서비스율 제약을 강하게 두면 해당 제약이 선제계약량을 직접 증가시켜
+$\Gamma$가 실제로 어떤 역할을 하는지 식별하기 어려울 수 있기 때문이다.
+서비스율은 결과 KPI로 계산한다.
+
+\begin{equation}
+SR_s(\Delta)
+=
+\frac{
+\sum_{t\in T(\Delta)}
+\sum_{(i,j,k,l)\in\Eset}y_{ijklts}
+}{
+\sum_{t\in T(\Delta)}
+\sum_{j\in J}\sum_{l\in L}d^{\mathrm{real},\Delta}_{jlts}
+}.
+\label{eq:service-kpi}
+\end{equation}
+
+필요한 경우 확장실험에서 최소 서비스율 또는 시나리오별 서비스수준을 추가한다.
+
+\section{Outer-loop 최적 경매주기}
+
+각 $\Delta\in\Dset$에 대해 동일 raw data를 재집계하고
+식 \eqref{eq:obj}의 내부 LP를 푼다.
+Seed $q$와 $\Gamma$가 주어졌을 때 최적 경매주기는
+
+\begin{equation}
+\Delta^*_{q,\Gamma}
+\in
+\arg\max_{\Delta\in\Dset}
+\Phi_{q,\Gamma}(\Delta)
+\end{equation}
+
+로 정의한다.
+
+여러 seed에 공통으로 적용할 대표 경매주기가 필요한 경우에는
+
+\begin{align}
+\bar\Phi_{\Gamma}(\Delta)
+&=
+\frac{1}{|\mathcal Q|}
+\sum_{q\in\mathcal Q}
+\Phi_{q,\Gamma}(\Delta),\\
+\Delta^{\mathrm{rec}}_{\Gamma}
+&\in
+\arg\max_{\Delta\in\Dset}
+\bar\Phi_{\Gamma}(\Delta)
+\end{align}
+
+를 사용한다.
+이는 ``특정 seed 하나의 최적주기''와 ``동일 Baseline 시장에서 평균적으로 좋은 공통 운영주기''를 구분하기 위함이다.
+
+\section{MMTR--MVCG 가격청산}
+
+가격청산은 Core LP와 분리한다.
+최적화 결과에서 $y_{ijklts} > \epsilon$인 거래 조합을 성립 거래로 식별한다.
+이후 MMTR--MVCG 규칙에 따라 한계거래, 구매자 청산가격, 판매자 지급액 및 플랫폼 마진을 사후 계산한다.
+가격청산 결과는 Core optimization의 의사결정변수나 제약식에 다시 투입하지 않는다.
+
+따라서 본 연구의 핵심 인과구조는
+
+\[
+\boxed{
+\text{선제계약}
+\rightarrow
+\text{실행매칭}
+\rightarrow
+\text{최적 경매주기 평가}
+\rightarrow
+\text{가격청산}
+}
+\]
+
+으로 유지한다.
+
+\section{실험설계}
+
+\subsection{0단계: 구현 sanity check}
+
+반복실험 전에 seed 101 하나만 사용하여
+
+\[
+\Gamma\in\{0,4,8\},
+\qquad
+\Delta\in\{1,7,14,28\}
+\]
+
+의 소규모 조합을 먼저 푼다.
+이 단계에서는 좋은 결과를 찾는 것이 아니라 다음을 확인한다.
+
+\begin{itemize}
+\item $\Gamma$가 증가할 때 robust target이 증가하는가,
+\item 선제계약량 $x^R$가 robust target에 반응하는가,
+\item 판매자 공급 및 중량ㆍ부피 제약이 동시에 지나치게 느슨하거나 지나치게 빡빡하지 않은가,
+\item 이월수요와 서비스율이 정상적으로 계산되는가,
+\item $\Delta$가 변할 때 목적함수의 비용구조가 실제로 변하는가.
+\end{itemize}
+
+각 품목--슬롯에서
+
+\begin{align}
+R_{lt}(\Gamma)
+&=
+\sum_j\hat d^\Delta_{jlt}
++\Gamma\eta_{lt}
++\sum_j\mu_{jlt},\\
+X^R_{lt}
+&=
+\sum_{i,k}x^R_{iklt},\\
+Slack^R_{lt}
+&=
+X^R_{lt}-R_{lt}(\Gamma)
+\end{align}
+
+를 반드시 저장한다.
+$R_{lt}(\Gamma)$가 변하지 않으면 데이터 또는 코드문제이고,
+$R_{lt}(\Gamma)$는 변하지만 $X^R_{lt}$가 동일하면 robust constraint가 non-binding일 가능성이 크다.
+
+\subsection{1단계: 본실험}
+
+sanity check가 정상적으로 작동하면
+
+\[
+5\text{ seeds}\times5\text{ Gamma levels}\times28\text{ auction cycles}
+=
+700\text{ LPs}
+\]
+
+를 푼다.
+
+각 실행에서 다음 값을 저장한다.
+
+\begin{table}[h!]
+\centering
+\caption{Baseline 주요 출력지표}
+\begin{tabularx}{0.94\textwidth}{@{}p{0.32\textwidth}X@{}}
+\toprule
+\textbf{지표} & \textbf{목적} \\
+\midrule
+$\Phi_{q,\Gamma}(\Delta)$ & 경매주기별 순운영잉여 \\
+$\sum x^R$ & 강건성 수준에 따른 선제계약량 \\
+$SR_s(\Delta)$ & 실행 시나리오별 서비스율 \\
+$\sum m$ 및 최종 $m_T$ & 이월수요 수준 \\
+Robust target 및 slack & $\Gamma$가 실제로 binding하는지 진단 \\
+중량ㆍ부피 capacity utilization & 어떤 물리제약이 병목인지 확인 \\
+Gurobi runtime, MIP gap & 계산성능 확인 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Baseline의 1차 목적은
+\textbf{정상적인 하나의 시장에서 $\Gamma$와 $\Delta$가 선제계약량과 운영성과를 어떻게 바꾸는지 확인하는 것}이다.
+초기 결과를 내기 위해 Supply-rich, Tight, Stress와 같은 별도 시장유형은 사용하지 않는다.
+
+\subsection{2단계: 선제계약비용 sensitivity analysis}
+
+Baseline $h^R_{ikl}$를 고정한 뒤
+
+\[
+h^{R,\lambda}_{ikl}
+=
+\lambda_h h^R_{ikl},
+\qquad
+\lambda_h\in\{0.5,0.75,1.0,1.5,2.0\}
+\]
+
+로 조정한다.
+이때 같은 seed의 다른 raw data는 변경하지 않는다.
+
+초기 sensitivity는 seed 101과 대표 $\Gamma\in\{0,4,8\}$에서 먼저 수행한다.
+선제계약량이 거의 변하지 않는다면 비용범위를 넓히고,
+변화가 나타나는 구간이 확인되면 그 구간을 세밀하게 재탐색한다.
+이 실험의 목적은 특정 배율 자체를 주장하는 것이 아니라
+\textbf{선제계약비용과 robust protection 사이에 실제 경제적 trade-off가 존재하는지 확인하는 것}이다.
+
+\subsection{3단계: 공통 경매주기와 Regret}
+
+각 seed의 개별 최적주기 $\Delta^*_{q,\Gamma}$를 먼저 구하고,
+동일 Baseline 시장에서 모든 seed에 공통으로 적용할 추천주기 $\Delta^{\mathrm{rec}}_{\Gamma}$를 계산한다.
+
+공통주기의 seed별 opportunity loss는
+
+\begin{equation}
+Regret_{q,\Gamma}
+=
+\Phi_{q,\Gamma}(\Delta^*_{q,\Gamma})
+-
+\Phi_{q,\Gamma}(\Delta^{\mathrm{rec}}_{\Gamma})
+\end{equation}
+
+으로 계산한다.
+MSE는 예측오차 지표이므로 본 문제의 경매주기 선택손실을 평가하는 주요 지표로 사용하지 않는다.
+
+\section{확장실험}
+
+Baseline 결과가 정상적으로 나온 뒤에만 실험을 확장한다.
+확장순서는 다음과 같이 권장한다.
+
+\begin{enumerate}
+\item \textbf{시장 수급상태 변화:}
+$\rho^S$와 $\rho^C$를 조정하여 공급ㆍ운송용량이 더 여유로운 시장과 더 빡빡한 시장을 만든다.
+초기 논문결과에서는 하나의 Normal/Baseline 시장만 사용하고,
+시장유형 비교는 별도 확장실험으로 제시한다.
+
+\item \textbf{일시적 충격경로:}
+Baseline의 전기간 실행 regime 대신 특정 기간에만 demand surge 또는 network disruption이 발생하는 경로를 만든다.
+
+\item \textbf{Rolling horizon / multi-stage:}
+충격이 순차적으로 관측되고 미래시나리오 전체를 미리 알 수 없도록 정보구조를 강화한다.
+이는 Baseline two-stage 모형과 별도의 확장으로 취급한다.
+
+\item \textbf{서비스수준 제약:}
+정책적으로 최소 서비스율이 필요할 경우에만 hard 또는 soft service-level constraint를 추가하고,
+그 제약이 $\Gamma$의 효과를 대신 설명하지 않는지 확인한다.
+
+\item \textbf{시장규모 확장:}
+판매자, 구매자, 운송업체 수를 늘려 계산확장성과 N:M 시장두께의 영향을 확인한다.
+
+\item \textbf{Hold-out 검증:}
+Baseline에서 충분한 결과가 나온 이후 새로운 seed를 별도로 생성하여
+추천 경매주기의 out-of-sample Regret을 평가한다.
+\end{enumerate}
+
+\section{모형의 단순화와 중복제약 검토}
+
+Baseline에서는 다음 원칙으로 불필요한 중복을 줄였다.
+
+\begin{itemize}
+\item 선제계약의 별도 정책상한 $\Omega$를 제거하고 공급량, 물리용량, 양의 $h^R$로 상한을 형성한다.
+\item 서비스율은 hard constraint가 아니라 결과 KPI로 이동한다.
+\item 슬롯 내 대기비용과 이월수요 패널티를 하나의 $c^{\mathrm{wait}}$로 통일한다.
+\item 지역ㆍ거리의 영향을 제거하기 위해 실행 운송비용을 seller--buyer pair별 $c_{ijkl}$가 아니라 carrier--item별 $c_{kl}$로 단순화한다.
+\item 판매자 공급 실행제약 $\sum_{j,k}y_{ijklts}\le\hat s^\Delta_{ilt}$는 별도로 추가하지 않는다.
+제약 \eqref{eq:contract-use}을 $k$에 대해 합하고 1단계 공급제약 \eqref{eq:pre-supply}을 적용하면 자동으로 만족하기 때문이다.
+\item 실행단계 중량ㆍ부피 제약 \eqref{eq:run-weight}--\eqref{eq:run-volume}은 제거하지 않는다.
+운송망 충격 $\gamma_s$가 실행 물리용량에만 적용되므로 1단계 물리용량 제약만으로는 대체되지 않는다.
+\end{itemize}
+
+거래활성화 변수 $z$와 최소거래량 $\underline q_l$는 사용하지 않는다.
+
+\section{Baseline의 복잡도 평가}
+
+현재 Baseline은 아래와 같다.
+
+\[
+\boxed{
+\text{Normal 시장}
++
+\text{1단계 robust 선제계약}
++
+\text{3개 실행 시나리오}
++
+\text{2단계 N:M 매칭}
++
+\text{outer-loop 경매주기}
+}
+\]
+
+시장유형 비교, 지역ㆍ거리, 품목우선순위, rolling horizon, 서비스율 hard constraint를 동시에 넣지 않기 때문에
+초기 Gurobi 실험을 수행하기에 과도하게 복잡한 문제설정은 아니다.
+오히려 지금 단계에서 더 많은 현실요소를 추가하면 $\Gamma$와 $\Delta$의 효과를 식별하기 어려워질 수 있다.
+
+따라서 먼저 Baseline에서
+(1) $\Gamma$가 선제계약량을 실제로 변화시키는지,
+(2) $\Delta$에 대해 내부 또는 U-shaped trade-off가 발생하는지,
+(3) 동일 시장의 여러 seed에서도 비슷한 최적주기가 나타나는지를 확인하는 것이 우선이다.
+
+\section{한계와 해석}
+
+첫째, Baseline의 실행 시나리오는 2단계 시작 시 전체 운영조건이 식별된다는 단순화된 정보구조를 사용한다.
+실제 운영에서 충격이 순차적으로 나타나는 경우에는 rolling-horizon 또는 multi-stage 확장이 필요하다.
+
+둘째, $\omega_s$는 실증확률이 아니라 평가가중치이므로
+$\sum_s\omega_s\Phi_s$를 실제 기대이윤으로 해석하지 않는다.
+
+셋째, Core 목적함수는 플랫폼의 실제 가격마진이 아니라 순운영잉여이다.
+플랫폼 마진은 MMTR--MVCG post-processing 결과로 별도 보고한다.
+
+넷째, Baseline 데이터는 synthetic data이며,
+$\rho^S$, $\rho^C$, $h^R$, 수요편차 및 비용범위는
+모형 작동을 검증하기 위한 출발점이다.
+향후 실제 데이터 또는 선행연구 근거가 확보되면 calibration한다.
+
+\section{Baseline 실험 파이프라인 요약}
+
+\[
+\boxed{
+\begin{array}{c}
+\text{일 단위 raw data 생성 및 seed 고정}\\
+\Downarrow\\
+\text{Baseline 수급 및 물리용량 calibration}\\
+\Downarrow\\
+\text{sanity check: }\Gamma\text{와 robust constraint 작동 확인}\\
+\Downarrow\\
+\text{각 }\Delta\text{별 재집계 및 two-stage robust Optimization 해결}\\
+\Downarrow\\
+\text{seed별 }\Delta^*\text{ 및 공통 }\Delta^{\mathrm{rec}}\text{ 도출}\\
+\Downarrow\\
+\text{선제계약비용 sensitivity 및 Regret 분석}\\
+\Downarrow\\
+\text{필요한 경우 시장유형ㆍ충격경로ㆍrolling horizon 확장}
+\end{array}
+}
+\]
+
+\section{References}
+
+\begin{enumerate}[label={(\arabic*)},leftmargin=*]
+\item Bertsimas, D.; Sim, M. The Price of Robustness. \textit{Operations Research}, 2004.
+\item Guo, J.; Zhang, J.; Cheng, T. C. E.; Zhao, S. Truthful double auction mechanisms for online freight platforms with transaction costs. \textit{Transportation Research Part B}, 2022.
+\item Zhu, H.; Pei, Z. Two-stage robust liner container booking with uncertain customer demand. \textit{Mathematics}, 2023.
+\item Agrali, S.; Tan, B.; Karaesmen, F. Modeling and analysis of an auction-based logistics market. \textit{European Journal of Operational Research}, 2008.
+\end{enumerate}
+
+\end{document}

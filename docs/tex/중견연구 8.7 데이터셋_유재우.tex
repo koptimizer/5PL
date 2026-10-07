@@ -1,0 +1,325 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{kotex}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{setspace}
+\usepackage{caption}
+\usepackage{multirow}
+
+\setstretch{1.12}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.45em}
+\captionsetup{font=small}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+\title{\textbf{Experimental Setup and Data Generation\\for 5PL Middle-Mile Platform}}
+\author{Numerical Experiment Parameters}
+\date{}
+
+\begin{document}
+\maketitle
+
+\section{Purpose of the Experimental Data Set}
+본 데이터셋은 5PL 미들마일 플랫폼에서 수요 폭증과 운송망 충격이 발생할 때, 강건 선제계약과 실행단계 매칭 및 경매주기 설계의 효과를 검증하기 위해 구성한다. 데이터 규모와 분포는 다음 세 가지 조건을 동시에 만족하도록 설정한다.
+
+\begin{enumerate}[label=(\arabic*)]
+    \item 정상상태에서는 대부분의 수요를 처리할 수 있어야 한다.
+    \item 수요 폭증 또는 운송망 충격이 발생하면 일부 이월수요가 발생할 수 있어야 한다.
+    \item 모든 거래가 자동으로 성립하지 않고, 경제적 가치와 운송용량에 따라 선택적인 매칭이 이루어져야 한다.
+\end{enumerate}
+
+본 문서에서는 기존 모형에 정의된 집합과 파라미터만 사용하며, 새로운 의사결정변수나 새로운 종류의 파라미터는 추가하지 않는다. 각 경매주기 $\Delta$는 동일한 60일 일별 원자료를 재집계하여 비교한다.
+
+\section{Base Sets and Time Horizon}
+
+\begin{table}[h!]
+\centering
+\begin{tabularx}{\textwidth}{clcY}
+\toprule
+\textbf{Set} & \textbf{Description} & \textbf{Size} & \textbf{Setting Rationale} \\
+\midrule
+$I$ & 판매자 & 6 & 다수 판매자의 공급 선택을 표현하면서도 초기 Gurobi 실험의 계산량을 관리하기 위한 규모이다. \\
+$J$ & 소비자 & 12 & 소비자별 수요 이질성을 표현하되, 거래활성화 이진변수 수가 과도하게 증가하지 않도록 설정한다. \\
+$K$ & 운송업체 & 3 & 소수 대형 운송업체가 중량 및 부피 용량을 공유하는 미들마일 구조를 반영한다. \\
+$L$ & 품목 & 4 & 고중량, 고용적, 표준, 긴급화물의 물리적 이질성을 비교하기 위한 구성이다. \\
+$\mathcal{T}^{cal}$ & 전체 분석기간 & 60일 & 여러 번의 경매와 이월수요의 누적 및 회복을 관찰하기 위한 기간이다. \\
+$\mathcal{S}$ & 실행단계 시나리오 & 3 & 평상시, 수요 폭증, 운송망 충격을 분리하여 비교한다. \\
+$\mathcal{D}$ & 경매주기 탐색공간 & $\{1,2,\ldots,30\}$ & 정수 일 단위의 운영 가능한 전체 경매주기를 평가하여 이산 공간의 전역 최적해를 구한다. \\
+\bottomrule
+\end{tabularx}
+\caption{Base sets and analysis horizon}
+\end{table}
+
+기준 규모에서 $\Delta=1$일이고 시나리오가 3개일 때 거래 조합의 최대 규모는
+\[
+|I||J||K||L||\mathcal{T}^{cal}||\mathcal{S}|
+=6\times12\times3\times4\times60\times3
+=155{,}520
+\]
+이다. 이는 초기 실험에서 Gurobi로 풀 수 있는 수준을 유지하면서도 N:M 다품목 매칭의 특성을 관찰하기 위한 절충적 규모이다.
+
+\section{Item Characteristics and Delay Penalties}
+
+\begin{table}[h!]
+\centering
+\begin{tabularx}{\textwidth}{clcccY}
+\toprule
+\textbf{Item} & \textbf{Characteristics} & $w_l$ & $v_l$ & $P^{delay}_{jl}$ & \textbf{Setting Rationale} \\
+\midrule
+$l_1$ & 고중량·저용적 화물 & 10 & 2 & $U(10,15)$ & 중량용량을 먼저 소진하는 weight-out 상황을 발생시킨다. \\
+$l_2$ & 저중량·고용적 화물 & 2 & 10 & $U(10,15)$ & 부피용량을 먼저 소진하는 cube-out 상황을 발생시킨다. \\
+$l_3$ & 표준화물 & 5 & 5 & $U(10,15)$ & 중량과 부피가 균형적인 기준 품목으로 사용한다. \\
+$l_4$ & 소형 긴급화물 & 1 & 1 & $U(35,50)$ & 적재부담은 작지만 지연손실이 큰 time-critical demand를 표현한다. \\
+\bottomrule
+\end{tabularx}
+\caption{Item characteristics and carry-over demand penalties}
+\end{table}
+
+$P^{delay}_{jl}$는 경매가 열린 이후에도 처리되지 않아 다음 슬롯으로 넘어가는 이월수요에 적용한다. 긴급화물 $l_4$에 더 높은 값을 부여함으로써, 용량이 제한된 상황에서 지연손실이 큰 수요가 우선적으로 처리될 가능성을 반영한다.
+
+\section{Demand and Supply Generation}
+
+\subsection{Nominal Demand}
+소비자 $j$, 품목 $l$, 일 $t$의 명목수요는 다음과 같이 생성한다.
+\[
+\hat d_{jlt}\sim \operatorname{Poisson}(20).
+\]
+
+소비자가 12명이므로 품목별 일일 기대수요는
+\[
+E\left[\sum_{j\in J}\hat d_{jlt}\right]
+=12\times20=240
+\]
+단위이다. Poisson 분포는 비음수 정수 수요를 생성하면서 일별 변동성을 자연스럽게 반영한다.
+
+\subsection{Seller Supply}
+판매자 $i$, 품목 $l$, 일 $t$의 명목공급은
+\[
+\hat s_{ilt}\sim \operatorname{Poisson}(65)
+\]
+로 생성한다. 판매자 6명의 품목별 총 기대공급은
+\[
+E\left[\sum_{i\in I}\hat s_{ilt}\right]
+=6\times65=390
+\]
+단위이다. 이는 평상시 기대수요 240단위와 최대 30\% 수요폭증 시 기대수요 312단위를 처리할 수 있는 수준이지만, 특정 판매자 또는 운송업체 조합의 비용 차이에 따라 공급 선택이 발생하도록 무제한적으로 크지는 않게 설정한 값이다.
+
+\subsection{Maximum Demand Deviation}
+강건 선제계약에 사용되는 기존 최대 수요 변동폭은 다음과 같이 생성한다.
+\[
+\Delta^{d}_{jlt}=\rho^{d}_{jlt}\hat d_{jlt},
+\qquad
+\rho^{d}_{jlt}\sim U(0.10,0.25).
+\]
+
+여기서 $\Delta^{d}_{jlt}$는 기존 모형의 최대 수요 변동폭을 의미하며, 경매주기 $\Delta$와의 기호 혼동을 피하기 위해 위첨자 $d$를 사용한다. 명목수요의 10--25\% 범위는 선제계약 buffer가 지나치게 작거나 과도하게 커지는 것을 방지하면서, $\Gamma$ 변화에 따른 강건성 효과를 관찰하기 위한 수준이다.
+
+\section{Carrier Capacity}
+운송업체 $k$의 일별 중량 및 부피 용량은 다음과 같이 생성한다.
+\[
+cap^{W}_{kt}\sim U(1800,2100),
+\qquad
+cap^{V}_{kt}\sim U(1800,2100).
+\]
+
+일일 기대 중량수요와 부피수요는 각각
+\[
+12\times20\times(10+2+5+1)=4{,}320
+\]
+단위이다. 세 운송업체의 기대 총용량은
+\[
+3\times E[U(1800,2100)]
+=3\times1{,}950=5{,}850
+\]
+이므로 정상상태의 기대 적재율은 약
+\[
+\frac{4{,}320}{5{,}850}\approx0.738
+\]
+이다. 약 74\%의 정상상태 적재율은 평상시에는 수요를 대부분 처리할 수 있지만, 수요 폭증이나 운송망 충격 시에는 용량이 빠듯해져 이월수요가 발생할 수 있도록 하기 위한 설정이다.
+
+\section{Economic Parameters}
+
+\begin{table}[h!]
+\centering
+\begin{tabularx}{\textwidth}{clcY}
+\toprule
+\textbf{Parameter} & \textbf{Description} & \textbf{Generation Rule} & \textbf{Setting Rationale} \\
+\midrule
+$a_{jlt}$ & 소비자 지불의사(WTP) & $U(120,200)$ & 소비자와 품목별 경제적 가치 차이를 반영한다. \\
+$b_{ilt}$ & 판매자 요구비용(WTA) & $U(60,110)$ & 판매자별 공급비용의 이질성을 반영한다. \\
+$c_{ijklt}$ & 단위 운송비용 & $U(20,70)$ & 판매자--소비자--운송업체 조합별 운송비 차이를 반영한다. \\
+$h^{R}_{iklt}$ & 단위 선제계약비용 & $U(5,9)$ & 선제계약의 과도한 확대를 통제하되 실행단계 운송비보다 낮게 설정한다. \\
+$c^{wait}_{jl}$ & 경매 전 대기비용/일 & $U(1,2)$ & 경매주기가 길수록 발생하는 주문 대기손실을 반영한다. \\
+$C^{auc}$ & 경매 1회 고정운영비 & 5,000 & 지나치게 짧은 경매주기가 무조건 선택되는 것을 방지한다. \\
+\bottomrule
+\end{tabularx}
+\caption{Economic parameter generation rules}
+\end{table}
+
+거래별 단위 surplus는
+\[
+\widetilde S_{ijklt}=a_{jlt}-b_{ilt}-c_{ijklt}
+\]
+로 계산된다. 설정된 범위에서 이론적 최소 및 최대 surplus는
+\[
+120-110-70=-60,
+\qquad
+200-60-20=120
+\]
+이다. 따라서 모든 거래가 자동으로 성립하지 않고, 경제적으로 유효한 거래와 유효하지 않은 거래가 함께 생성된다. 평균적인 값에서는
+\[
+160-85-45=30>0
+\]
+이므로 시장 전체적으로는 양의 거래기회가 존재하도록 설정한다.
+
+$c^{wait}_{jl}$와 $P^{delay}_{jl}$는 서로 다른 지연을 나타낸다. $c^{wait}_{jl}$는 주문이 도착한 후 경매가 열릴 때까지의 대기비용이고, $P^{delay}_{jl}$는 경매에서 처리되지 않아 다음 경매로 이월된 수요의 패널티이다. 두 비용을 구분함으로써 경매 전 대기와 경매 후 미충족을 중복 계산하지 않는다.
+
+\section{Uncertainty Scenarios}
+
+\begin{table}[h!]
+\centering
+\begin{tabularx}{\textwidth}{clcccY}
+\toprule
+\textbf{Scenario} & \textbf{Description} & $\omega_s$ & $\theta_{lt}$ & $\gamma_{kt}$ & \textbf{Setting Rationale} \\
+\midrule
+$s_1$ & 평상시 & 0.60 & 0 & 0 & 정상 운영성과에 가장 큰 확률가중치를 부여한다. \\
+$s_2$ & 수요 폭증 & 0.20 & $U(0.15,0.30)$ & 0 & 계약상한과 충돌하지 않는 범위에서 수요증가 충격을 발생시킨다. \\
+$s_3$ & 운송망 충격 & 0.20 & 0 & $U(0.10,0.25)$ & 정상상태 수요를 처리할 수 있으나 여유용량을 크게 감소시키는 충격을 표현한다. \\
+\bottomrule
+\end{tabularx}
+\caption{Execution-stage uncertainty scenarios}
+\end{table}
+
+시나리오 확률은 평상시 0.60, 수요 폭증과 운송망 충격에 각각 0.20을 부여한다. 수요폭증 상한을 30\%로 제한한 것은 선제계약 상한 $\Omega_l=0.4$와의 구조적 불일치를 피하면서도 buffer의 필요성을 나타내기 위함이다. 운송망 충격은 최대 25\%로 설정하여 평상시에는 안정적이지만 충격 시에는 일부 수요가 이월될 수 있도록 한다.
+
+\section{Auction Cycle and Robustness Level}
+
+\subsection{Auction Cycle Search Space}
+경매주기의 운영 가능한 전체 정수 공간은
+\[
+\mathcal{D}
+=\{\Delta\in\mathbb{Z}_{+}:1\leq\Delta\leq30\}
+\]
+으로 설정한다. 이는 일부 대표값만 선택하는 민감도 분석이 아니라, 1일부터 30일까지 모든 정수 경매주기를 평가하여 해당 이산 운영공간에서 전역 최적 경매주기 $\Delta^{*}$를 도출하기 위한 설정이다.
+
+\subsection{Robustness Budget}
+소비자 수가 $|J|=12$이므로 불확실성 예산은 다음 세 수준으로 비교한다.
+\[
+\Gamma_{lt}\in\{0,6,12\}.
+\]
+
+\begin{table}[h!]
+\centering
+\begin{tabularx}{0.88\textwidth}{lcY}
+\toprule
+\textbf{Level} & \textbf{Value} & \textbf{Interpretation} \\
+\midrule
+Deterministic & $\Gamma=0$ & 추가 수요편차를 고려하지 않는 기준모형이다. \\
+Moderate robust & $\Gamma=6$ & 소비자 절반이 동시에 최대편차 방향으로 변동하는 상황을 고려한다. \\
+Worst-case robust & $\Gamma=12$ & 모든 소비자가 동시에 최대편차 방향으로 변동하는 보수적 상황을 고려한다. \\
+\bottomrule
+\end{tabularx}
+\caption{Robustness-budget levels}
+\end{table}
+
+세 수준을 비교함으로써 강건성 향상에 따른 선제계약비용 증가와 미충족수요 감소의 trade-off를 분석할 수 있다.
+
+\subsection{Over-contracting Limit and Minimum Service Rate}
+명목수요 대비 선제계약 상한은
+\[
+\Omega_l=0.4
+\]
+로 설정한다. 따라서 선제계약량은 명목수요의 최대 140\%까지 허용된다. 최대 수요폭증이 30\%이므로, 40\% 상한은 수요폭증에 대응할 수 있는 buffer를 제공하면서 과도한 선제계약을 제한한다.
+
+기존 서비스율 제약의 기준값은
+\[
+SR^{\min}=0.90
+\]
+으로 설정한다. 이는 수요폭증이나 운송망 충격이 발생한 모든 상황에서 100\% 충족을 강제하여 모형이 infeasible해지는 것을 방지하면서, B2B 미들마일 운영에서 최소 90\% 이상의 수요처리를 요구하기 위한 기준이다.
+
+\section{Data Aggregation by Auction Cycle}
+서로 다른 경매주기를 공정하게 비교하기 위해 60일 일별 원자료는 한 번만 생성한다. 이후 각 $\Delta\in\mathcal D$에 대해 동일한 원자료를 경매슬롯 단위로 재집계한다.
+
+경매주기 $\Delta$에서 시간슬롯 집합은
+\[
+T(\Delta)
+=\left\{1,\ldots,
+\left\lceil\frac{60}{\Delta}\right\rceil
+\right\}
+\]
+이다. 슬롯 $q$에 포함되는 일별 자료를 합산하여
+\[
+\hat d^{\Delta}_{jlq}
+=
+\sum_{t=(q-1)\Delta+1}^{\min(q\Delta,60)}
+\hat d_{jlt},
+\]
+\[
+\hat s^{\Delta}_{ilq}
+=
+\sum_{t=(q-1)\Delta+1}^{\min(q\Delta,60)}
+\hat s_{ilt},
+\]
+\[
+cap^{W,\Delta}_{kq}
+=
+\sum_{t=(q-1)\Delta+1}^{\min(q\Delta,60)}
+cap^{W}_{kt},
+\qquad
+cap^{V,\Delta}_{kq}
+=
+\sum_{t=(q-1)\Delta+1}^{\min(q\Delta,60)}
+cap^{V}_{kt}
+\]
+로 생성한다.
+
+이 방식은 경매주기마다 새로운 난수를 생성할 때 발생할 수 있는 표본 차이를 제거한다. 따라서 경매주기별 성과 차이는 데이터 생성 차이가 아니라 경매주기 자체가 수요집계, 시장 유동성, 대기비용 및 이월수요에 미치는 영향으로 해석할 수 있다.
+
+\section{Final Parameter Summary}
+
+\begin{table}[h!]
+\centering
+\begin{tabularx}{0.92\textwidth}{lY}
+\toprule
+\textbf{Category} & \textbf{Final Setting} \\
+\midrule
+Set size & $(|I|,|J|,|K|,|L|)=(6,12,3,4)$ \\
+Analysis horizon & 60 days \\
+Nominal demand & $\hat d_{jlt}\sim\operatorname{Poisson}(20)$ \\
+Seller supply & $\hat s_{ilt}\sim\operatorname{Poisson}(65)$ \\
+Maximum demand deviation & $\Delta^d_{jlt}=\rho^d_{jlt}\hat d_{jlt}$, $\rho^d_{jlt}\sim U(0.10,0.25)$ \\
+Weight/volume capacity & $cap^W_{kt},cap^V_{kt}\sim U(1800,2100)$ \\
+WTP & $a_{jlt}\sim U(120,200)$ \\
+WTA & $b_{ilt}\sim U(60,110)$ \\
+Transportation cost & $c_{ijklt}\sim U(20,70)$ \\
+Pre-contract cost & $h^R_{iklt}\sim U(5,9)$ \\
+Waiting cost & $c^{wait}_{jl}\sim U(1,2)$ \\
+Auction operating cost & $C^{auc}=5{,}000$ \\
+Demand surge & $\theta_{lt}\sim U(0.15,0.30)$ in $s_2$ \\
+Network disruption & $\gamma_{kt}\sim U(0.10,0.25)$ in $s_3$ \\
+Robustness budget & $\Gamma_{lt}\in\{0,6,12\}$ \\
+Over-contracting limit & $\Omega_l=0.4$ \\
+Minimum service rate & $SR^{\min}=0.90$ \\
+Auction cycle & $\mathcal D=\{1,2,\ldots,30\}$ days \\
+\bottomrule
+\end{tabularx}
+\caption{Final experimental data-set configuration}
+\end{table}
+
+\section{Expected Experimental Role of the Data Set}
+본 데이터셋은 정상상태에서 약 74\%의 기대 적재율을 가지므로 기본 시나리오에서는 대부분의 수요를 처리할 수 있다. 반면 수요폭증 또는 운송망 충격이 발생하면 가용여유가 감소하여 선제계약 수준과 경매주기에 따라 이월수요가 달라질 수 있다. 또한 WTP, WTA 및 운송비 분포가 서로 겹치기 때문에 모든 거래가 성립하지 않고, MILP가 경제적으로 유효한 매칭과 용량배분을 선택해야 한다.
+
+따라서 이 데이터셋은 다음의 연구질문을 검증하는 데 적합하다.
+\begin{enumerate}[label=(\arabic*)]
+    \item 강건성 수준 $\Gamma$가 선제계약량, 비용 및 미충족수요에 어떤 영향을 주는가?
+    \item 경매주기 $\Delta$가 시장 유동성, 경매운영비, 대기비용 및 이월수요에 어떤 영향을 주는가?
+    \item 중량 및 부피가 이질적인 품목을 혼적할 때 weight-out과 cube-out이 매칭결과에 어떻게 나타나는가?
+    \item 최소 서비스율을 만족하면서 가장 높은 순성과를 제공하는 경매주기 $\Delta^*$는 무엇인가?
+\end{enumerate}
+
+\end{document}

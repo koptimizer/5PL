@@ -1,0 +1,447 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{kotex}
+\usepackage[margin=21mm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{colortbl}
+\usepackage{enumitem}
+\usepackage{setspace}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage[hidelinks]{hyperref}
+
+\setstretch{1.15}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{0.4em}
+\renewcommand{\arraystretch}{1.3}
+\setlist[itemize]{leftmargin=1.2em,topsep=2pt,itemsep=2pt,parsep=0pt}
+\setlist[enumerate]{leftmargin=1.4em,topsep=2pt,itemsep=2pt,parsep=0pt}
+
+% ---- 색상 ----
+\definecolor{redbg}{RGB}{253,235,235}
+\definecolor{ambbg}{RGB}{255,248,230}
+\definecolor{blubg}{RGB}{234,243,253}
+\definecolor{graybg}{RGB}{244,244,246}
+\definecolor{dred}{RGB}{178,34,34}
+\definecolor{damb}{RGB}{176,120,0}
+\definecolor{dblu}{RGB}{28,86,150}
+
+\newcommand{\hl}[1]{\textbf{\color{dblu}#1}}
+\newcommand{\bad}[1]{\textbf{\color{dred}#1}}
+
+% ---- 간단한 색상 박스 (표준 패키지만 사용) ----
+\newcommand{\cbox}[3]{%
+  \par\smallskip\noindent
+  \begin{tabular}{@{}p{0.008\textwidth}@{\hspace{6pt}}p{0.955\textwidth}@{}}
+  \cellcolor{#1}\rule{0pt}{2ex} & \cellcolor{#2}\parbox{0.95\textwidth}{\vspace{3pt}#3\vspace{3pt}} \\
+  \end{tabular}\par\smallskip}
+
+\newcommand{\sym}[1]{\cbox{dred}{redbg}{\textbf{\color{dred}증상.}\ #1}}
+\newcommand{\why}[1]{\cbox{damb}{ambbg}{\textbf{\color{damb}왜 문제인가.}\ #1}}
+\newcommand{\fix}[1]{\cbox{dblu}{blubg}{\textbf{\color{dblu}처방.}\ #1}}
+
+\titleformat{\section}{\large\bfseries\color{dblu}}{\thesection.}{0.45em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.45em}{}
+\titlespacing*{\section}{0pt}{14pt}{5pt}
+\titlespacing*{\subsection}{0pt}{11pt}{4pt}
+
+\title{\textbf{모형(8.7)과 시나리오(9.1) 정합성 검토}\\[5pt]
+\large 무엇이 어긋났고, 무엇부터 고쳐야 하는가}
+\author{}
+\date{2026년 9월}
+
+\begin{document}
+\maketitle
+\vspace{-2em}
+
+%======================================================================
+\section*{한 장 요약}
+\addcontentsline{toc}{section}{한 장 요약}
+
+시나리오(9.1)가 최신이므로 \hl{9.1을 기준으로 8.7의 수식을 고치는} 방향으로 정리했다.
+발견한 문제는 총 10건이며, 아래 표의 위에서부터 순서대로 처리하면 된다.
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}c p{0.30\textwidth} X c@{}}
+\toprule
+\textbf{순위} & \textbf{문제} & \textbf{한 줄 설명} & \textbf{심각도} \\
+\midrule
+\rowcolor{redbg} 1 & 수급비와 $\Gamma$ 범위 충돌 & 물건이 없는데 더 사두라고 시키는 셈. 실험이 중간에 멈춤 & \bad{치명} \\
+\rowcolor{redbg} 2 & 140일을 한 번에 최적화 & 미래를 미리 아는 셈이라 짧은 주기가 부당하게 유리해짐 & \bad{치명} \\
+\rowcolor{ambbg} 3 & 서비스율이 평균으로 걸림 & 재난 때 무너져도 평소가 좋으면 통과 & 중대 \\
+\rowcolor{ambbg} 4 & 시나리오 $s$의 정의 없음 & ``수요폭증''이 140일 내내인지 하루인지 불명확 & 중대 \\
+\rowcolor{ambbg} 5 & 계약상한 $\Omega$ 누락 & 9.1에 값을 정하는 방법이 없음 & 중대 \\
+\midrule
+\rowcolor{graybg} 6 & 품목당 판매자 3명 & 한 명이 막히면 전체가 막힘. 결과가 들쭉날쭉 & 보통 \\
+\rowcolor{graybg} 7 & 대기비용 파라미터 중복 & 같은 것을 두 이름으로 씀 & 보통 \\
+\rowcolor{graybg} 8 & 비용 실험 범위가 좁음 & 변화가 일어나는 구간을 벗어나 있음 & 보통 \\
+\rowcolor{graybg} 9 & 중량:부피 용량비 미정 & 잘못 잡으면 한쪽 제약만 작동 & 보통 \\
+\rowcolor{graybg} 10 & $\Delta$ 범위 미정 & 어디부터 어디까지 볼지 안 정해짐 & 보통 \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\cbox{dblu}{blubg}{%
+\textbf{\color{dblu}지금 당장 할 일 (실험 돌리기 전).}\
+\textbf{1번}을 먼저 계산으로 닫는다. 이것을 안 하면 2단계 $\Gamma$ 실험의 절반이 실패로 끝난다.
+그 다음 \textbf{2번}(rolling horizon으로 전환)을 결정한다.
+이 둘만 해결하면 나머지는 실험을 돌리면서 조정할 수 있다.}
+
+%======================================================================
+\section{치명적 문제}
+
+%----------------------------------------------------------------------
+\subsection{수급비 설정과 $\Gamma$ 탐색 범위가 서로 충돌한다}
+
+\sym{9.1은 시장의 공급을 수요보다 \textbf{10--30\% 많게}($\rho^{SD}=1.1$--$1.3$) 잡겠다고 했다.
+동시에 $\Gamma$를 $0$부터 $8$까지 전부 실험하겠다고 했다.
+그런데 이 두 설정으로는 \bad{$\Gamma$가 큰 경우에 해가 존재하지 않는다}.}
+
+\why{$\Gamma$를 올린다는 것은 \emph{``소비자 수요가 예상보다 늘어날 것에 대비해 더 많이 계약해 두겠다''}는 뜻이다.
+그런데 시장에 물건 자체가 부족하면 아무리 계약하고 싶어도 할 수가 없다.
+
+\medskip
+\textbf{숫자로 보면 이렇다.} 명목수요가 $100$이고 각 소비자의 수요가 최대 $30\%$까지 늘 수 있다고 하자($\delta=0.3$).
+\begin{itemize}
+\item $\Gamma=0$: ``예상대로만 대비'' $\rightarrow$ 필요한 계약량 $100$
+\item $\Gamma=4$: ``소비자 절반이 동시에 튀는 것까지 대비'' $\rightarrow$ 필요한 계약량 $115$
+\item $\Gamma=8$: ``전원이 동시에 튀는 것까지 대비'' $\rightarrow$ 필요한 계약량 $130$
+\end{itemize}
+그런데 $\rho^{SD}=1.1$이면 시장 전체 공급이 $110$뿐이다.
+$\Gamma=4$($115$ 필요)부터 이미 \bad{살 물건이 없다}.}
+
+\begin{center}
+\small
+\begin{tabular}{cc ccccc}
+\toprule
+\textbf{수요변동 $\delta$} & \textbf{공급여유 $\rho^{SD}$} & $\Gamma{=}0$ & $\Gamma{=}2$ & $\Gamma{=}4$ & $\Gamma{=}6$ & $\Gamma{=}8$ \\
+\midrule
+0.20 & 1.10 & 가능 & 가능 & 가능 & \bad{불가} & \bad{불가} \\
+0.30 & 1.10 & 가능 & 가능 & \bad{불가} & \bad{불가} & \bad{불가} \\
+0.30 & 1.20 & 가능 & 가능 & 가능 & \bad{불가} & \bad{불가} \\
+\rowcolor{blubg} 0.30 & 1.30 & 가능 & 가능 & 가능 & 가능 & 가능 \\
+0.40 & 1.30 & 가능 & 가능 & 가능 & 가능 & \bad{불가} \\
+\rowcolor{blubg} 0.40 & 1.50 & 가능 & 가능 & 가능 & 가능 & 가능 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\fix{규칙은 간단하다. \textbf{수요가 최대 $\delta$만큼 늘 수 있다면, 공급은 그만큼 더 있어야 한다.}
+\[
+\boxed{\ \rho^{SD}\ \ge\ 1+\delta
+\qquad\text{그리고}\qquad
+\Omega\ \ge\ \delta\ }
+\]
+따라서 9.1의 ``$\rho^{SD}=1.1$--$1.3$''을 \hl{``$\rho^{SD}=1.35$--$1.5$''}로 올리고,
+$\delta$(수요가 최대 몇 \% 늘 수 있는가)를 파라미터 표에 정식으로 넣는다.
+$\Omega$도 $\delta$에 맞춰 정한다.}
+
+%----------------------------------------------------------------------
+\subsection{140일을 한 번에 최적화하면 짧은 주기가 부당하게 유리해진다}
+
+\sym{8.7의 목적식은 $\sum_{t\in T(\Delta)}$ 로 \textbf{모든 슬롯을 한꺼번에} 최적화한다.
+그 결과 \bad{$\Delta$가 짧을수록 유리해지는 편향}이 생긴다.}
+
+\why{\textbf{비유하자면}, 시험지를 전부 훑어본 뒤 푸는 것과 한 문제씩 넘기며 푸는 것의 차이다.
+지금 모형은 1일차 결정을 내릴 때 이미 140일차에 무슨 일이 벌어질지 알고 있다.
+그래서 ``오늘은 일부러 미뤄두고 3일 뒤에 몰아서 처리하자''는 판단을 완벽하게 할 수 있다.
+
+\medskip
+문제는 \textbf{이 이득의 크기가 $\Delta$에 따라 다르다}는 것이다.
+\begin{itemize}
+\item $\Delta=1$ $\rightarrow$ 슬롯 140개. 140번의 기회를 미래를 다 알고 조율
+\item $\Delta=35$ $\rightarrow$ 슬롯 4개. 조율할 기회가 4번뿐
+\end{itemize}
+즉 짧은 주기가 ``미래를 아는 이득''을 훨씬 많이 챙긴다.
+이 상태로 $\Delta^*$가 짧게 나오면, 그것이 \bad{시장 특성 때문인지 모형 구조 때문인지 구분할 수 없다}.
+경매주기 비교가 이 논문의 핵심 주제이므로 이 편향은 그대로 두기 어렵다.}
+
+\fix{\hl{rolling horizon으로 되돌린다.} 슬롯을 하나씩 순차적으로 풀고,
+못 채운 수요 $m_{jl,t-1,s}$만 다음 슬롯으로 넘긴다.
+7.28 버전이 이 구조였다. 이렇게 하면 \textbf{모든 $\Delta$가 똑같이 ``지금까지만 안다''}가 되어
+비교가 공정해진다.
+
+\medskip
+\emph{대안:} monolithic을 유지하고 싶다면 2단계에 non-anticipativity 제약을 넣어야 하는데
+구현 부담이 크다. 한계로만 명시하는 것은 주제가 $\Delta$ 비교이므로 권하지 않는다.}
+
+%======================================================================
+\section{중대한 문제}
+
+%----------------------------------------------------------------------
+\subsection{서비스율이 ``평균''으로 걸려 있어 안전장치 역할을 못 한다}
+
+\sym{8.7의 서비스율 제약은 여러 시나리오를 \textbf{가중 평균}한 값에 대해 걸려 있다.}
+
+\why{예를 들어 최소 서비스율을 $90\%$로 두었다고 하자.
+평상시 시나리오에서 $99\%$를 달성하면, \bad{재난 시나리오에서 $60\%$로 무너져도 평균은 $90\%$를 넘어 통과}한다.
+9.1은 서비스율을 ``최소 운영기준이자 안전장치''라고 규정했는데, 지금 형태로는 안전장치가 되지 못한다.}
+
+\fix{\hl{시나리오마다 따로 건다}($\forall s$). 다만 이렇게 하면 Stress 시나리오에서 해가 없어질 수 있으므로,
+\textbf{위반량에 큰 벌점을 주는 soft 제약}으로 두는 편이 안전하다.
+\[
+\sum_t\sum y_{ijklts}+\sigma_s\ \ge\ \mathrm{SR}^{\min}\sum_t\sum d^{\mathrm{real}}_{jlts}
+\qquad
+\text{목적식에 } -\Lambda\sum_s\omega_s\sigma_s \text{ 추가}
+\]
+이러면 ``되도록 지키되, 정말 불가능하면 벌점을 물고 넘어간다''가 되어 실험이 멈추지 않는다.}
+
+%----------------------------------------------------------------------
+\subsection{실행 시나리오 $s$가 무엇인지 정의되어 있지 않다}
+
+\sym{9.1은 $s$를 \{정상, 수요폭증, 운송망 차단\} 세 가지로 두었다.
+8.7은 $\theta_{jlts}$, $\gamma_{kts}$를 \textbf{슬롯마다} 정의했다. 두 문서의 $s$가 서로 다른 것을 가리킨다.}
+
+\why{``수요폭증 시나리오''라고 하면 \textbf{140일 내내 폭증}이라는 뜻인가?
+그렇다면 비현실적이고, 무엇보다 \emph{충격이 언제 오는지}를 표현할 수 없다.
+반대로 슬롯마다 따로 뽑는다면 시나리오 수가 $3^{20}$개로 폭발한다.}
+
+\fix{$s$를 \hl{``140일치 일별 데이터 한 세트''}로 정의한다.
+\[
+s=\{\,\text{1일차 수요와 용량},\ \text{2일차 수요와 용량},\ \dots,\ \text{140일차}\,\}
+\]
+예를 들어 ``$s_2$: 45일차부터 3일간 수요가 2배로 뛰는 경로'' 처럼 정의하면 된다.
+
+\medskip
+이렇게 하면 세 가지가 한 번에 해결된다.
+\begin{enumerate}
+\item 충격이 \emph{언제} 오는지 표현할 수 있다
+\item \textbf{모든 $\Delta$가 같은 일별 데이터를 재집계}하므로 주기 비교가 공정하다
+\item 시나리오 수를 대표경로 3개(또는 표본 20개)로 유한하게 유지할 수 있다
+\end{enumerate}
+9.1의 ``$\Delta$가 달라져도 새 데이터를 만들지 않고 같은 일별 원자료를 재집계한다''와도 정확히 맞는다.}
+
+%----------------------------------------------------------------------
+\subsection{계약상한 $\Omega$를 정하는 방법이 9.1에 없다}
+
+\sym{8.7에는 ``계약량은 명목수요의 $(1+\Omega)$배를 넘을 수 없다''는 제약이 있는데,
+9.1에는 \bad{$\Omega$를 얼마로 할지가 없다.} ``상한에 항상 붙어 있지는 않아야 한다''는 서술만 있다.}
+
+\why{$\Omega$가 너무 작으면 1.1절에서 본 것처럼 $\Gamma$가 큰 경우 해가 없어지고,
+너무 크면 상한이 있으나 마나가 된다.}
+
+\fix{$\delta$에 연동해 정한다: $\Omega=\delta+0.05\sim0.15$.
+예를 들어 $\delta=0.3$이면 $\Omega=0.35\sim0.45$. 이 값을 9.1 파라미터 표에 추가한다.}
+
+%======================================================================
+\section{시나리오 자체에서 손봐야 할 것}
+
+%----------------------------------------------------------------------
+\subsection{품목당 판매자가 3명뿐이라 결과가 들쭉날쭉해진다}
+
+\sym{9.1은 판매자 6명을 품목 $A$ 3명, 품목 $B$ 3명으로 나눈다.
+그런데 공급 제약은 \textbf{판매자 한 명 한 명에게} 걸린다.}
+
+\why{품목 $A$의 총공급이 충분해도, 3명 중 한 명의 공급량이 유독 작으면 거기서 병목이 생긴다.
+그리고 seed를 바꾸면 이 3명의 크기 배분이 매번 달라지므로 \bad{$\Gamma$의 효과가 seed 우연에 묻힌다.}
+사람이 3명뿐이라 편차가 크게 나타나기 때문이다.}
+
+\fix{둘 중 하나를 택한다.
+\begin{itemize}
+\item 품목별 판매자의 공급량을 \hl{균등에 가깝게} 생성한다(총공급을 $0.9\sim1.1$ 가중으로 배분)
+\item 판매자를 $8\sim10$명으로 늘려 \hl{품목당 $4\sim5$명}을 배정한다
+\end{itemize}}
+
+%----------------------------------------------------------------------
+\subsection{대기비용 파라미터가 두 개로 중복되어 있다}
+
+\sym{8.7 목적식에 슬롯 내 대기비용 $c^{\mathrm{wait}}$ 와 이월 벌점 $P^{\mathrm{delay}}$ 가
+\textbf{서로 다른 파라미터}로 들어 있다.}
+
+\why{둘 다 ``하루 기다리면 얼마 손해인가''를 나타낸다. 같은 개념이다.
+9.1에서 품목별 납기 우선순위를 쓰지 않기로 했으므로 두 개를 따로 둘 이유가 없다.}
+
+\fix{$c^{\mathrm{wait}}_{jl}=P^{\mathrm{delay}}_{jl}$ 로 \hl{하나로 통일}한다.
+대기시간 계산 방식은 그대로 둔다(이번 슬롯에 처리되면 평균 $(\Delta-1)/2$일, 이월되면 $\Delta$일 추가).}
+
+%----------------------------------------------------------------------
+\subsection{계약비용 실험 범위가 변화 구간을 벗어나 있다}
+
+\sym{9.1은 계약비용 배율을 $\lambda_h\in\{0.5,1,2,4\}$로 두었다.
+\bad{이 범위에서는 아무 변화도 관찰되지 않는다.}}
+
+\why{예비실험 결과, 계약비용을 미충족 벌점 대비 $0.2$배에서 $4$배까지 올려도
+$\Gamma$가 클수록 좋다는 결론이 \textbf{한 번도 바뀌지 않았다}. $10$배가 되어서야 뒤집혔다.
+$\lambda_h=4$는 비율로 따지면 $0.8$배 수준이므로 전 구간이 같은 영역이다.}
+
+\begin{center}
+\small
+\begin{tabular}{cccc c}
+\toprule
+\textbf{계약비 $\div$ 미충족벌점} & $\Gamma=0$ & $\Gamma=|J|/2$ & $\Gamma=|J|$ & \textbf{결론} \\
+\midrule
+0.2  & 6,818 & 9,761 & 11,679 & $\Gamma$ 클수록 좋음 \\
+0.6  & 5,425 & 8,173 & 9,949  & $\Gamma$ 클수록 좋음 \\
+1.6  & 1,943 & 4,205 & 5,626  & $\Gamma$ 클수록 좋음 \\
+4.1  & $-6{,}413$ & $-5{,}318$ & $-4{,}751$ & $\Gamma$ 클수록 좋음 \\
+\rowcolor{ambbg} 10.2 & $-27{,}304$ & $-29{,}125$ & $-30{,}693$ & \textbf{여기서 뒤집힘} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\fix{배율이 아니라 \hl{비율을 직접 지정}한다.
+\[
+\frac{h^R}{\lambda^U}\in\{0.2,\ 1,\ 3,\ 8,\ 20\}
+\]
+이렇게 하면 결론이 뒤집히는 지점이 반드시 탐색범위 안에 들어온다.}
+
+%----------------------------------------------------------------------
+\subsection{중량 용량과 부피 용량의 비율이 정해져 있지 않다}
+
+\sym{9.1은 품목 $A$를 $(w,v)=(10,2)$, 품목 $B$를 $(2,10)$으로 대칭 설정했다. 좋은 설계다.
+그런데 \bad{운송업체의 중량 용량과 부피 용량을 각각 얼마로 할지가 없다.}}
+
+\why{두 품목의 수요가 같다면 중량 소요와 부피 소요가 각각 $12$로 똑같아진다.
+이때 용량도 같게 두어야 \textbf{두 제약이 동시에 팽팽해진다}.
+비율을 잘못 잡으면 한쪽 제약만 작동해서, 9.1이 의도한 weigh-out/cube-out 상황이 사라진다.}
+
+\begin{center}
+\small
+\begin{tabular}{cccc}
+\toprule
+\textbf{수요비 $A{:}B$} & \textbf{중량 소요} & \textbf{부피 소요} & \textbf{필요한 $cap^W:cap^V$} \\
+\midrule
+\rowcolor{blubg} $1:1$ & 12 & 12 & $1.00:1$ \\
+$1:2$ & 14 & 22 & $0.64:1$ \\
+$2:1$ & 22 & 14 & $1.57:1$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\fix{두 품목의 수요를 대칭으로 두고 \hl{$cap^W=cap^V$} 로 설정한다.}
+
+%----------------------------------------------------------------------
+\subsection{경매주기 후보 범위가 정해져 있지 않다}
+
+\sym{9.1은 $\Delta\in\mathcal{D}$ 라고만 쓰고 \bad{어디부터 어디까지인지 정하지 않았다.}}
+
+\why{$\Delta$가 너무 크면 슬롯이 2\textasciitilde3개밖에 안 되어 이월이나 rolling horizon이 작동하지 않는다.
+최소한 4개 슬롯은 있어야 의미가 있다.}
+
+\begin{center}
+\small
+\begin{tabular}{cccc}
+\toprule
+\textbf{최소 슬롯 수} & \textbf{$\Delta$ 상한} & \textbf{후보 개수} & \textbf{총 슬롯(계산량)} \\
+\midrule
+3 & 46일 & 46개 & 601 \\
+\rowcolor{blubg} 4 & 35일 & 35개 & 568 \\
+5 & 28일 & 28개 & 540 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\fix{$\mathcal{D}=\{1,2,\dots,35\}$ 로 명시한다($\Tcal=140$일, 최소 슬롯 4개 기준).
+$\Gamma$ 5수준과 곱하면 시장 하나당 $175$회 MILP를 푸는 규모다.}
+
+%======================================================================
+\section{실험 순서: 9.1의 6단계에 무엇을 더할 것인가}
+
+9.1의 순서(정상화 $\rightarrow$ $\Gamma$ 검증 $\rightarrow$ 비용 민감도 $\rightarrow$ 주기 최적화
+$\rightarrow$ 시장 확장 $\rightarrow$ 교차 평가)는 \hl{그대로 두어도 좋다.}
+아래 세 가지만 보완한다.
+
+\subsection{맨 앞에 0단계를 추가: 종이 위에서 파라미터 관계 닫기}
+
+\cbox{dblu}{blubg}{%
+코드를 돌리기 \textbf{전에} 다음 순서로 계산만 한다.
+\[
+\delta\ \text{결정}
+\;\longrightarrow\;
+\rho^{SD}\ge1+\delta,\quad \Omega\ge\delta
+\;\longrightarrow\;
+\Gamma_{\max}=\frac{|J|\cdot\min(\rho^{SD}-1,\ \Omega)}{\delta}
+\]
+\textbf{예:} $\delta=0.3$, $\rho^{SD}=1.4$, $\Omega=0.4$, $|J|=8$
+$\rightarrow$ $\Gamma_{\max}=8\times0.4/0.3=10.7$ $\rightarrow$ $\Gamma=8$까지 전부 안전.
+
+\medskip
+이 계산을 건너뛰면 2단계에서 절반이 ``해 없음''으로 끝난다.}
+
+\subsection{4단계가 $\Gamma\times\Delta$ 격자인 이유를 명시}
+
+9.1은 이미 격자로 되어 있어 맞다. 다만 \emph{왜} 격자여야 하는지를 적어두면 좋다.
+
+슬롯을 길게 잡으면 수요 변동폭이 $\sqrt{\Delta}$에 비례해 커진다.
+즉 \hl{$\Gamma$가 만들어내는 효과의 크기 자체가 $\Delta$에 따라 달라진다.}
+두 요인은 독립이 아니므로 따로 볼 수 없고 반드시 격자로 봐야 한다.
+
+\subsection{6단계에 ``훈련/검증 분리''와 Regret 정의 추가}
+
+\cbox{dblu}{blubg}{%
+\textbf{(1) seed를 반으로 나눈다.} 훈련 5개로 최적 주기를 고르고, \textbf{다른} 검증 5개로 평가한다.
+같은 seed로 고르고 같은 seed로 평가하면 과적합이다.
+
+\medskip
+\textbf{(2) Regret을 정의한다.}
+\[
+\mathrm{Regret}(\Delta,s)=\underbrace{\Phi_s(\Delta^*_s)}_{\text{그 시나리오를 미리 알았다면}}-\underbrace{\Phi_s(\Delta)}_{\text{실제로 쓴 주기}}
+\]
+그리고 평균 Regret이 가장 작은 $\Delta$, 또는 최악 Regret이 가장 작은 $\Delta$를 고른다.
+둘이 일치하면 그 자체가 강한 결과다.}
+
+\subsection{보고 지표에 ``분산과 최악값''을 반드시 추가}
+
+\sym{9.1은 계약량, 목적함수, 서비스율, 이월수요 네 가지만 지정했다.
+\bad{평균만 보면 강건성의 효과가 거의 안 보인다.}}
+
+\why{예비실험에서 $\Gamma$를 $0$에서 $|J|$로 올렸더니 다음과 같았다.}
+
+\begin{center}
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{지표} & $\Gamma=0$ & $\Gamma=|J|$ & \textbf{개선폭} \\
+\midrule
+평균 목적함수 & 6,992 & 11,824 & $+69\%$ \\
+\rowcolor{blubg} 하위 20\% 평균(CVaR) & 2,881 & 7,332 & $\mathbf{+155\%}$ \\
+\rowcolor{blubg} 최악값 & 2,099 & 6,483 & $\mathbf{+209\%}$ \\
+서비스율 & 82.7\% & 93.8\% & $+11.1$\%p \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\fix{\hl{꼬리(최악의 경우)가 평균보다 3배 크게 개선된다.}
+robust optimization의 효과는 원래 평균이 아니라 \textbf{나쁜 상황에서 얼마나 덜 망하는가}에서 나온다.
+따라서 다음을 함께 보고한다.
+\[
+\mathbb{E}[\Phi],\quad \mathrm{sd}[\Phi],\quad \mathrm{CVaR}_{20\%}[\Phi],\quad \min_s\Phi_s
+\]
+이는 Gotoh, Kim \& Lim의 \emph{Calibration of Distributionally Robust Empirical Optimization Models}
+(Operations Research)의 핵심 주장과 일치한다.}
+
+%======================================================================
+\section{수정 체크리스트}
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{@{}c p{0.22\textwidth} X@{}}
+\toprule
+\# & \textbf{어디를} & \textbf{어떻게} \\
+\midrule
+\rowcolor{redbg} 1 & 데이터 생성 & $\rho^{SD}$를 $1.35$--$1.5$로 올리고 $\delta$를 파라미터로 도입 \\
+\rowcolor{redbg} 2 & 전체 풀이 구조 & rolling horizon으로 전환. 슬롯별 순차 해결, 이월분만 전달 \\
+\rowcolor{ambbg} 3 & 서비스율 제약 & 시나리오별로 부과. 위반량 $\sigma_s$를 둔 soft 제약 \\
+\rowcolor{ambbg} 4 & 시나리오 정의 & $s$를 ``140일치 일별 경로''로 재정의 \\
+\rowcolor{ambbg} 5 & 계약상한 & $\Omega=\delta+0.05\sim0.15$ \\
+6 & 판매자 공급량 & 균등 배분하거나 $|I|$를 8--10으로 확대 \\
+7 & 목적식 & $c^{\mathrm{wait}}$ 삭제, $P^{\mathrm{delay}}$로 통일 \\
+8 & 비용 실험 & 배율 대신 비율 $h^R/\lambda^U\in\{0.2,1,3,8,20\}$ \\
+9 & 용량 설정 & $cap^W=cap^V$ \\
+10 & 주기 후보 & $\mathcal{D}=\{1,\dots,35\}$ \\
+\midrule
+\rowcolor{graybg} \multicolumn{3}{@{}p{0.96\textwidth}@{}}{%
+\textbf{건드리지 말 것:} 실행단계 중량ㆍ부피 제약은 \textbf{그대로 유지}한다.
+이전 검토에서 ``중복이니 삭제''라고 했던 것은 $\sum_j y\le(1-\gamma)x^R$ 이던 구버전 기준이다.
+8.7에서 $(1-\gamma)$를 뺀 것은 잘한 변경이지만, 그 결과 이 제약이 되살아났다.
+무작위 표본 20만 건 중 13.4\%에서 위반이 발생함을 확인했다.} \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\end{document}

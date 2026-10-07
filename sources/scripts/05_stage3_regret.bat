@@ -1,0 +1,4 @@
+@echo off
+cd /d "%~dp0.."
+python run_research.py stage3
+pause

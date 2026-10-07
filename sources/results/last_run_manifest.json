@@ -1,0 +1,8 @@
+{
+  "config_path": "C:\\Users\\Jaewoo\\Desktop\\5PL_Gurobi_Research_Pipeline_9_2\\5PL_Gurobi_Research_Pipeline_9_2\\config_baseline.json",
+  "config_sha256": "44f1ddefce91134ab54f5f02e81eae34bfdedef5a869c505c5a5deddcb7f90c7",
+  "data_generation_fingerprint": "d224f883fc001e5010b9b727dce09f449a60ace305287ce50a8077d8eacfe799",
+  "command": "all",
+  "results_root": "C:\\Users\\Jaewoo\\Desktop\\5PL_Gurobi_Research_Pipeline_9_2\\5PL_Gurobi_Research_Pipeline_9_2\\results",
+  "timestamp_local": "2026-09-02 14:24:54"
+}

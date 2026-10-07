@@ -1,0 +1,328 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[a4paper,margin=0.72in]{geometry}
+\usepackage{kotex}
+\usepackage{amsmath,amssymb,mathtools}
+\usepackage{booktabs,tabularx,longtable,array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{titlesec}
+\usepackage{setspace}
+\usepackage[hidelinks]{hyperref}
+
+\setstretch{1.02}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{3pt}
+\setlist[itemize]{leftmargin=*,topsep=2pt,itemsep=1pt,parsep=0pt}
+\setlist[enumerate]{leftmargin=*,topsep=2pt,itemsep=1pt,parsep=0pt}
+\titlespacing*{\section}{0pt}{6pt}{3pt}
+\titlespacing*{\subsection}{0pt}{5pt}{2pt}
+\titlespacing*{\subsubsection}{0pt}{4pt}{1.5pt}
+\titlespacing*{\paragraph}{0pt}{4pt}{0.5em}
+\titleformat{\section}{\large\bfseries}{\thesection.}{0.4em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.4em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries}{\thesubsubsection}{0.4em}{}
+\titleformat{\paragraph}[runin]{\bfseries\color{blue!55!black}}{}{0pt}{}
+
+\newcommand{\hl}[1]{\textbf{\color{blue!55!black}#1}}
+\newcommand{\Tcal}{\mathcal{T}^{\mathrm{cal}}}
+\newcommand{\Scen}{\mathcal{S}}
+\newcommand{\Dset}{\mathcal{D}}
+\newcommand{\Aset}{\mathcal{A}}
+\newcommand{\Eset}{\mathcal{E}}
+\newcommand{\Rset}{\mathcal{R}}
+\newcommand{\Zp}{\mathbb{Z}_{+}}
+
+\begin{document}
+
+\begin{center}
+{\Large \textbf{5PL 미들마일 플랫폼의 수요 및 운송망 불확실성 대응을 위한 \\ 강건 선제계약과 최적 경매주기 설계}}\\
+{\normalsize \textbf{Robust Pre-contracting and Optimal Auction Cycle Design for a 5PL Middle-mile Platform}}\\[5pt]
+유재우
+\end{center}
+
+\section{Abstract}
+본 연구는 수요 폭증과 운송망 충격이 발생하는 5PL 미들마일 플랫폼에서 \hl{선제계약과 실행단계 시장청산을 two-stage robust MILP로 모형화}하고, 이를 outer-loop 기반 최적 경매주기 설계와 결합한 의사결정 프레임워크를 제안한다. 플랫폼은 1단계에서 수요 폭증과 운송망 충격이 실현되기 전에 판매자--운송업체 간 운송용량을 선제계약하고, 2단계에서는 실현수요와 실제 가용 운송용량에 따라 판매자, 소비자, 운송업체, 품목 간 N:M 매칭을 수행한다. 전 분석기간에 공통으로 적용되는 경매주기 $\Delta$는 MILP 내부에서 시간집합의 크기를 변경하는 변수로 직접 처리하지 않고, 운영 가능한 모든 정수 주기를 완전열거하는 exact outer loop에서 평가한다. 각 $\Delta$별로 수요, 공급, 운송용량 및 불확실성 파라미터를 재집계한 후 동일한 two-stage MILP를 풀며, 사회적 잉여, 경매운영비, 대기비용, 이월수요 패널티 및 최소 서비스율을 종합하여 최적 경매주기 $\Delta^*$를 결정한다. 가격청산은 MILP와 분리된 MMTR--MVCG post-processing rule로 수행한다.
+
+\section{Introduction}
+B2B 미들마일 물류에서는 수요가 특정 기간에 집중되거나 운송망 일부가 차단될 경우, 단순한 배차 실패가 아니라 납기 실패, 재고 결품, 생산라인 정지 등으로 이어질 수 있다. 특히 5PL 플랫폼은 자체 운송자산을 직접 보유하기보다 여러 판매자, 소비자 및 운송업체를 연결하여 거래를 청산하므로, 불확실성이 실현되기 전에 어느 정도의 용량을 계약할 것인지와 각 운영 시점에서 어떤 거래를 성립시킬 것인지가 중요하다.
+
+본 연구는 미들마일 플랫폼 문제를 단순 운송배정이 아니라 \hl{계약 기반 동적 시장청산 문제}로 정의한다. 1단계 선제계약은 명목수요와 수요변동폭을 기반으로 불확실성에 대비하는 here-and-now 결정이고, 2단계 실행매칭은 수요 폭증과 운송망 충격이 관측된 후 이루어지는 wait-and-see 결정이다. 또한 경매가 지나치게 자주 열리면 각 경매에 모이는 수요와 공급이 감소하여 시장 유동성과 혼적 가능성이 낮아지고 경매운영비가 증가할 수 있다. 반대로 경매주기가 길어지면 주문의 평균 대기시간, 예측오차 및 이월수요 손실이 커질 수 있다. 따라서 본 연구는 $\Delta$를 단순 민감도 분석 파라미터가 아니라 \hl{플랫폼의 전역적 경매 운영주기 설계변수}로 해석한다.
+
+\section{Novelty and Purpose}
+\paragraph{핵심 연구질문} 불확실한 수요와 운송망 충격 하에서 5PL 미들마일 플랫폼은 \textbf{얼마나 많은 운송용량을 선제계약하고, 경매를 얼마나 자주 열어야 하는가?}
+
+\paragraph{주요 novelty} 본 연구의 차별성은 다음 네 가지로 정리된다.
+\begin{enumerate}
+    \item \textbf{Two-stage robust market clearing:} 수요 불확실성에 대한 강건 선제계약과 충격 관측 이후의 시나리오별 실행매칭을 명확히 구분한다.
+    \item \textbf{Exact optimal auction-cycle design:} 운영 가능한 정수 경매주기 전체를 outer loop에서 평가하고, 각 주기에 대한 MILP 최적값을 비교하여 이산 운영정책 공간의 전역 최적 경매주기를 도출한다.
+    \item \textbf{N:M multi-item middle-mile matching:} 판매자 $I$, 소비자 $J$, 운송업체 $K$, 품목 $L$을 동시에 고려하고, 중량 및 부피 제약을 통해 weight-out/cube-out 상황을 반영한다.
+    \item \textbf{Post-processing MMTR--MVCG pricing:} 가격을 MILP의 자유로운 이윤극대화 변수로 두지 않고, 매칭결과 이후 규칙 기반 사후 청산으로 분리한다.
+\end{enumerate}
+
+\paragraph{연구 목적} 제안 모형의 목적은 (i) 수요 불확실성에 대비한 강건 선제계약량을 결정하고, (ii) 수요 폭증 및 운송망 충격이 실현된 이후 실행 가능한 N:M 매칭을 도출하며, (iii) 경매운영비, 평균 대기시간, 이월수요 및 서비스 수준 간의 trade-off를 고려하여 최적 경매주기 $\Delta^*$를 제시하고, (iv) MILP 최적해와 heuristic의 성과 차이를 비교하는 것이다.
+
+\section{Method}
+\subsection{Problem structure and assumptions}
+\paragraph{정보구조} 1단계 변수는 수요 폭증계수와 운송망 감소율이 관측되기 전에 결정되며, 2단계 변수는 시나리오가 실현된 후 조정된다. 이를 위해 $x^R_{iklt}$에는 시나리오 첨자 s를 사용하지 않으며, 결과적으로 미래 정보를 미리 이용한 계약결정을 방지한다.
+
+\paragraph{경매주기} $\Delta$는 시간슬롯마다 달라지는 값이 아니라 전 분석기간에 공통으로 적용되는 경매 간격이다. 시간슬롯 인덱스 $t$는 주어진 $\Delta$에서 생성되는 경매순서를 의미하며 최적화변수가 아니다.
+
+\paragraph{이월수요} 현재 경매슬롯에서 실현수요를 충족하지 못한 물량은 다음 슬롯으로 이월된다. 기본모형에서는 모든 미충족 수요가 다음 경매까지 유효하다고 가정하며, time-critical demand의 lost demand 전환은 향후 확장으로 둔다.
+
+\paragraph{운송망 충격} 선제계약량 $x^R$은 계약상 사용한도이고, 운송망 충격 $\gamma$는 실행단계에서 운송업체의 실제 중량 및 부피용량을 감소시킨다. 동일한 $\gamma$를 계약량과 물리용량에 동시에 곱하여 충격을 중복 반영하지 않는다.
+
+\paragraph{거래 활성화} $z$는 경매에서 선택된 거래조합을 나타내며, 실제 거래가 성립하면 최소 운송단위 $\underline q_l$ 이상을 운송하도록 한다. 따라서 $z$와 연결제약은 단순 표시용이 아니라 과도하게 분할된 미소거래를 방지하는 운영제약이다.
+
+\paragraph{가격청산} MMTR--MVCG 가격청산은 core MILP의 목적식과 제약식에서 제외한다. MILP가 도출한 성립거래와 운송량을 입력으로 받아 한계거래를 식별하고 구매자 청산가격, 판매자 지급액 및 플랫폼 마진을 사후 계산한다.
+
+\subsection{Sets and auction-cycle aggregation}
+\begin{longtable}{@{}p{0.20\textwidth}p{0.72\textwidth}@{}}
+\toprule
+기호 & 의미 \\
+\midrule
+$I,J,K,L$ & 판매자, 소비자, 운송업체, 품목 집합 \\
+$\Scen$ & 수요 폭증 및 운송망 충격 시나리오 집합 \\
+$\Rset=\{1,\ldots,\Tcal\}$ & 일 단위 기본 캘린더 집합; $\Tcal$은 전체 분석기간(일) \\
+$\Dset=\{\Delta\in\Zp:\Delta_{\min}\le\Delta\le\Delta_{\max}\}$ & 실무적으로 운영 가능한 정수 경매주기 전체 \\
+$T(\Delta)=\{1,\ldots,N(\Delta)\}$ & 경매주기 $\Delta$에서 생성되는 시간슬롯 집합 \\
+$\Aset_t(\Delta)$ & 경매슬롯 $t$에 포함되는 기본 캘린더 일자의 집합 \\
+$\Eset_t\subseteq I\times J\times K\times L$ & 품목취급, 경로, 운송자격 및 비음(-)의 기본 거래잉여 조건을 만족하는 feasible trade arc 집합 \\
+\bottomrule
+\end{longtable}
+
+경매 횟수와 슬롯별 캘린더 집합은 다음과 같다.
+\begin{align}
+N(\Delta)&=\left\lceil\frac{\Tcal}{\Delta}\right\rceil, \\
+\Aset_t(\Delta)&=\left\{r\in\Rset:(t-1)\Delta+1\le r\le \min(t\Delta,\Tcal)\right\}.
+\end{align}
+
+일 단위 원자료를 경매주기별로 다음과 같이 재집계한다.
+\begin{align}
+\hat d^{\Delta}_{jlt}&=\sum_{r\in\Aset_t(\Delta)}\hat d_{jlr}, &
+\xi^{\Delta}_{jlt}&=\sum_{r\in\Aset_t(\Delta)}\xi_{jlr}, \\
+\hat s^{\Delta}_{ilt}&=\sum_{r\in\Aset_t(\Delta)}\hat s_{ilr}, &
+cap^{W,\Delta}_{kt}&=\sum_{r\in\Aset_t(\Delta)}cap^W_{kr}, \\
+cap^{V,\Delta}_{kt}&=\sum_{r\in\Aset_t(\Delta)}cap^V_{kr}. &&
+\end{align}
+
+시나리오 $s$에서의 실현수요는
+\begin{equation}
+d^{\mathrm{real},\Delta}_{jlts}=(1+\theta_{jlts})\hat d^{\Delta}_{jlt}
+\end{equation}
+으로 정의한다. 주문이 슬롯 내에 균등하게 도착한다고 가정하면 평균 대기시간은 $\tau^{\Delta}_{jlt}=(|\Aset_t(\Delta)|-1)/2$일이며, 실제 주문도착 시각이 있는 경우에는 수요가중 평균 대기시간으로 대체한다.
+
+\subsection{Parameters}
+\begin{longtable}{@{}p{0.27\textwidth}p{0.65\textwidth}@{}}
+\toprule
+기호 & 의미 \\
+\midrule
+$\hat d^{\Delta}_{jlt}$ & 소비자 $j$, 품목 $l$, 슬롯 $t$의 명목수요 \\
+$\xi^{\Delta}_{jlt}$ & 해당 명목수요의 최대 증가편차 \\
+$\Gamma_{lt}\in[0,|J|]$ & 품목--슬롯별 budgeted uncertainty 예산 \\
+$\hat s^{\Delta}_{ilt}$ & 판매자 $i$의 품목 $l$ 공급가능량 \\
+$cap^{W,\Delta}_{kt},cap^{V,\Delta}_{kt}$ & 운송업체 $k$의 명목 중량 및 부피용량 \\
+$w_l,v_l$ & 품목 $l$의 단위중량 및 단위부피 \\
+$\Omega_l$ & 명목수요 대비 선제계약 상한비율 \\
+$h^R_{iklt}$ & 판매자--운송업체--품목별 선제계약 단위비용 \\
+$a_{jlt},b_{ilt},c_{ijklt}$ & 구매자 단위가치, 판매자 단위요구비용, 운송 단위비용 \\
+$\theta_{jlts}$ & 시나리오 $s$의 수요 폭증계수 \\
+$\gamma_{kts}\in[0,1]$ & 시나리오 $s$의 실행단계 운송용량 감소율 \\
+$\omega_s\ge0$ & 시나리오 평가가중치, $\sum_{s\in\Scen}\omega_s=1$ \\
+$P^{\mathrm{delay}}_{jl}$ & 소비자--품목별 단위시간 이월수요 패널티 \\
+$c^{\mathrm{wait}}_{jl}$ & 소비자--품목별 단위시간 대기비용 \\
+$C^{\mathrm{auc}}$ & 경매 1회당 플랫폼 운영비용 \\
+$\underline q_l>0$ & 거래 성립 시 요구되는 품목별 최소 운송단위 \\
+$SR^{\min}\in[0,1]$ & 전체 시나리오 가중 최소 서비스율 \\
+$M^y_{ijklts}$ & 거래 활성화에 사용하는 유효한 거래별 upper bound \\
+\bottomrule
+\end{longtable}
+
+\subsection{Decision variables}
+\begin{longtable}{@{}p{0.28\textwidth}p{0.64\textwidth}@{}}
+\toprule
+변수 & 의미 \\
+\midrule
+$x^R_{iklt}\ge0$ & 수요와 운송망 충격이 실현되기 전에 확보하는 선제계약용량 \\
+$\eta_{lt}\ge0,\mu_{jlt}\ge0$ & budgeted uncertainty robust counterpart의 보조변수 \\
+$y_{ijklts}\ge0$ & 시나리오 $s$에서 거래조합 $(i,j,k,l)$을 통해 실제 운송되는 물량 \\
+$m_{jlts}\ge0$ & 슬롯 $t$ 말에 충족되지 않아 다음 슬롯으로 이월되는 수요 \\
+$z_{ijklts}\in\{0,1\}$ & 시나리오 $s$에서 해당 거래조합이 성립하면 1 \\
+\bottomrule
+\end{longtable}
+
+\subsection{Core two-stage robust MILP for a fixed auction cycle $\Delta$}
+고정된 경매주기 $\Delta$에 대한 최적 목적값을 $\Phi(\Delta)$라 한다. 목적식은 선제계약비용과 경매운영비를 차감하고, 시나리오 가중 실행단계 거래잉여에서 슬롯 내 대기비용과 이월수요 패널티를 차감한다.
+
+\subsubsection{Objective function}
+\begin{align}
+\Phi(\Delta)=\max\quad
+&-\sum_{t\in T(\Delta)}\sum_{i\in I}\sum_{k\in K}\sum_{l\in L}
+ h^R_{iklt}x^R_{iklt}
+-C^{\mathrm{auc}}N(\Delta) \nonumber\\
+&+\sum_{s\in\Scen}\omega_s\Bigg[
+\sum_{t\in T(\Delta)}\sum_{(i,j,k,l)\in\Eset_t}
+\left(a_{jlt}-b_{ilt}-c_{ijklt}-c^{\mathrm{wait}}_{jl}\tau^{\Delta}_{jlt}\right)y_{ijklts}
+\nonumber\\[-1mm]
+&\hspace{35mm}-\sum_{t\in T(\Delta)}\sum_{j\in J}\sum_{l\in L}
+P^{\mathrm{delay}}_{jl}\Delta\,m_{jlts}
+\Bigg].
+\label{eq:objective}
+\end{align}
+
+대기비용은 해당 경매주기 내에서 실제 처리된 주문이 경매시점까지 기다리는 평균손실을 나타내고, 이월수요 패널티는 현재 경매에서도 충족되지 않아 다음 경매까지 추가로 기다리는 손실을 나타낸다. 이월수요를 구매자의 실제 지불가격에 가산하지 않으므로 delay premium과 가격청산을 분리할 수 있다.
+
+\subsubsection{First-stage robust pre-contracting constraints}
+품목--슬롯별 budgeted uncertainty set에 대한 강건 수요충족 하한은 다음과 같다.
+\begin{align}
+\sum_{i\in I}\sum_{k\in K}x^R_{iklt}
+&\ge \sum_{j\in J}\hat d^{\Delta}_{jlt}
++\Gamma_{lt}\eta_{lt}+\sum_{j\in J}\mu_{jlt},
+&&\forall l,t, \label{eq:robust-cover}\\
+\eta_{lt}+\mu_{jlt}
+&\ge \xi^{\Delta}_{jlt},
+&&\forall j,l,t. \label{eq:robust-dual}
+\end{align}
+
+선제계약이 명목수요 대비 과도하게 증가하지 않도록 정책상한을 둔다.
+\begin{equation}
+\sum_{i\in I}\sum_{k\in K}x^R_{iklt}
+\le (1+\Omega_l)\sum_{j\in J}\hat d^{\Delta}_{jlt},
+\qquad \forall l,t.
+\label{eq:contract-cap}
+\end{equation}
+
+판매자 공급가능량과 운송업체의 명목 물리용량을 만족해야 한다.
+\begin{align}
+\sum_{k\in K}x^R_{iklt}
+&\le \hat s^{\Delta}_{ilt},
+&&\forall i,l,t, \label{eq:supply}\\
+\sum_{i\in I}\sum_{l\in L}w_lx^R_{iklt}
+&\le cap^{W,\Delta}_{kt},
+&&\forall k,t, \label{eq:pre-weight}\\
+\sum_{i\in I}\sum_{l\in L}v_lx^R_{iklt}
+&\le cap^{V,\Delta}_{kt},
+&&\forall k,t. \label{eq:pre-volume}
+\end{align}
+
+제약식 \eqref{eq:robust-cover}--\eqref{eq:contract-cap}의 양립을 위해 robust demand target이 정책상한을 초과하지 않도록 $\Gamma_{lt}$와 $\Omega_l$을 사전에 조정한다.
+
+\subsubsection{Second-stage execution matching constraints}
+초기 이월수요는 다음과 같이 둔다.
+\begin{equation}
+m_{jl0s}=0,
+\qquad \forall j,l,s.
+\label{eq:initial-backlog}
+\end{equation}
+
+각 소비자--품목--슬롯의 실현수요와 이전 슬롯의 이월수요는 현재 운송되거나 다시 이월되어야 한다.
+\begin{equation}
+\sum_{(i,k):(i,j,k,l)\in\Eset_t}y_{ijklts}+m_{jlts}
+=d^{\mathrm{real},\Delta}_{jlts}+m_{jl,t-1,s},
+\quad \forall j,l,t,s.
+\label{eq:demand-balance}
+\end{equation}
+
+실제 운송량은 1단계에서 확보한 판매자--운송업체--품목별 계약한도를 초과할 수 없다.
+\begin{equation}
+\sum_{j:(i,j,k,l)\in\Eset_t}y_{ijklts}
+\le x^R_{iklt},
+\quad \forall i,k,l,t,s.
+\label{eq:contract-use}
+\end{equation}
+
+운송망 충격이 반영된 실행단계 중량 및 부피용량은 다음과 같다.
+\begin{align}
+\sum_{(i,j,l):(i,j,k,l)\in\Eset_t}w_ly_{ijklts}
+&\le (1-\gamma_{kts})cap^{W,\Delta}_{kt},
+&&\forall k,t,s, \label{eq:run-weight}\\
+\sum_{(i,j,l):(i,j,k,l)\in\Eset_t}v_ly_{ijklts}
+&\le (1-\gamma_{kts})cap^{V,\Delta}_{kt},
+&&\forall k,t,s. \label{eq:run-volume}
+\end{align}
+
+거래성립 여부와 실제 운송량은 최소 운송단위와 거래별 upper bound로 연결한다.
+\begin{align}
+\underline q_l z_{ijklts}
+&\le y_{ijklts},
+&&\forall (i,j,k,l)\in\Eset_t,t,s, \label{eq:min-lot}\\
+y_{ijklts}
+&\le M^y_{ijklts}z_{ijklts},
+&&\forall (i,j,k,l)\in\Eset_t,t,s. \label{eq:bigM}
+\end{align}
+
+전체 시나리오 가중 서비스율이 최소기준 이상이 되도록 다음의 선형 제약을 둔다.
+\begin{equation}
+\sum_{s\in\Scen}\omega_s
+\sum_{t\in T(\Delta)}\sum_{(i,j,k,l)\in\Eset_t}y_{ijklts}
+\ge SR^{\min}
+\sum_{s\in\Scen}\omega_s
+\sum_{t\in T(\Delta)}\sum_{j\in J}\sum_{l\in L}d^{\mathrm{real},\Delta}_{jlts}.
+\label{eq:service}
+\end{equation}
+
+변수영역은 다음과 같다.
+\begin{equation}
+x^R_{iklt},\eta_{lt},\mu_{jlt},y_{ijklts},m_{jlts}\ge0,
+\qquad z_{ijklts}\in\{0,1\}.
+\label{eq:domain}
+\end{equation}
+
+\subsection{Tight Big-$M$ setting for Gurobi}
+제약식 \eqref{eq:bigM}에서 임의의 전역 Big-$M$를 사용하지 않고, 데이터와 기존 제약에서 도출되는 거래별 상한을 사용한다. 먼저 선제계약 변수의 유효한 개별 상한을
+\begin{equation}
+M^x_{iklt}=\min\left\{
+\hat s^{\Delta}_{ilt},\;
+\frac{cap^{W,\Delta}_{kt}}{w_l},\;
+\frac{cap^{V,\Delta}_{kt}}{v_l},\;
+(1+\Omega_l)\sum_{j\in J}\hat d^{\Delta}_{jlt}
+\right\}
+\label{eq:Mx}
+\end{equation}
+로 둔다. 수요균형에 의해 슬롯 $t$에서 소비자 $j$의 품목 $l$에 배정될 수 있는 물량은 해당 시점까지 누적된 실현수요를 초과할 수 없으므로,
+\begin{equation}
+M^y_{ijklts}=\min\left\{
+\sum_{\tau=1}^{t}d^{\mathrm{real},\Delta}_{jl\tau s},\;
+M^x_{iklt},\;
+\frac{(1-\gamma_{kts})cap^{W,\Delta}_{kt}}{w_l},\;
+\frac{(1-\gamma_{kts})cap^{V,\Delta}_{kt}}{v_l}
+\right\}
+\label{eq:My}
+\end{equation}
+로 설정한다. Gurobi 구현 시에는 각 인덱스별로 식 \eqref{eq:My}를 사전 계산하며, 불필요하게 큰 상수를 사용하지 않는다. Gurobi indicator constraint를 사용할 수 있는 경우에는 $z=0\Rightarrow y=0$을 indicator로 구현하고, 최소 운송단위 제약은 별도로 유지할 수 있다.
+
+\subsection{Outer-loop optimal auction-cycle design}
+운영가능 범위 전체를
+\begin{equation}
+\Dset=\{\Delta\in\Zp:\Delta_{\min}\le\Delta\le\Delta_{\max}\}
+\end{equation}
+로 정의한다. 이는 일부 대표주기만 임의로 선택한 집합이 아니라, 연구에서 허용한 정수 일 단위 운영정책 공간 전체이다. 각 $\Delta\in\Dset$에 대해 시간슬롯과 파라미터를 재생성하고 식 \eqref{eq:objective}--\eqref{eq:domain}을 Gurobi로 정확히 푼다. 최적 경매주기는
+\begin{equation}
+\Delta^*\in\arg\max_{\Delta\in\Dset}\Phi(\Delta)
+\label{eq:outer}
+\end{equation}
+로 결정한다. 각 내부 MILP를 최적성 허용오차 내에서 풀고 모든 $\Delta$를 완전열거하면, $\Delta^*$는 정의된 이산 운영정책 공간에서의 전역 최적 경매주기이다.
+
+\subsection{Post-processing MMTR--MVCG pricing}
+MILP가 도출한 $y_{ijklts}$와 $z_{ijklts}$를 이용하여 품목--슬롯--시나리오별 성립거래 집합을 구성한다. 각 시장에서 성립거래를 거래잉여 순으로 정렬하고, 정해진 trade-reduction 규칙에 따라 한계거래를 식별한다. 한계거래의 구매자 WTP와 판매자 WTA를 기준으로 구매자 청산가격 $p^B$와 판매자 지급액 $p^S$를 산정하며, 개별 합리성 $p^B\le a$, $p^S\ge b$와 플랫폼의 거래별 및 묶음 마진을 사후 검토한다. 본 절차는 core MILP의 최적화변수나 제약식이 아니라, 매칭결과를 입력으로 받는 규칙 기반 계산단계이다.
+
+\subsection{Pipeline and simulation plan}
+\paragraph{실험 파이프라인} (1) 일 단위 판매자 공급, 소비자 수요, 운송업체 용량, 거래가치와 비용 및 충격 시나리오를 생성하거나 수집한다. (2) 각 $\Delta\in\Dset$에 대해 데이터를 $T(\Delta)$ 기준으로 재집계한다. (3) 식 \eqref{eq:objective}--\eqref{eq:domain}의 two-stage robust MILP를 Gurobi로 푼다. (4) 내부 MILP의 최적값 $\Phi(\Delta)$와 서비스율, 이월수요 및 계산시간을 저장한다. (5) 식 \eqref{eq:outer}에 따라 $\Delta^*$를 선택한다. (6) 선택된 매칭결과에 대해 MMTR--MVCG 가격청산을 사후 수행한다.
+
+\paragraph{비교군} 본 연구에서는 강화학습을 적용하지 않는다. MILP 최적해를 (i) 명목수요 기반 선제계약, (ii) 고정 buffer 선제계약, (iii) 거래잉여 기반 greedy matching과 비교하여 목적값, 서비스율, 이월수요 및 계산시간의 차이를 제시한다.
+
+\section{Limitations and Future Work}
+\paragraph{한계} 첫째, 기본모형은 현재 슬롯의 모든 미충족 수요가 다음 슬롯까지 유효하다고 가정하므로 time-critical demand의 즉시 취소 또는 lost demand를 완전히 표현하지 못한다. 둘째, 시나리오 가중치 $\omega_s$는 실제 확률이 아니라 실험상 상대적 중요도로 설정될 수 있으며, 이 경우 결과는 확률적 기대값이 아니라 가중 시나리오 성과로 해석해야 한다. 셋째, 수요 불확실성은 1단계의 budgeted uncertainty set으로 방어하고 실행단계는 유한 시나리오로 평가하므로, 분포 전체에 대한 최악상황 보장은 제공하지 않는다. 넷째, MMTR--MVCG 가격청산은 core MILP와 분리되어 있어 가격청산 결과가 매칭의사결정에 완전히 내생화되지 않는다.
+
+\paragraph{향후 진행방향} 향후에는 미충족 수요를 이월 가능 수요와 lost demand로 분리하고, 소비자 또는 품목별 최대 허용대기시간을 추가할 수 있다. 또한 실제 주문도착 자료를 이용하여 경매주기별 수요집계와 평균대기시간을 정교화하고, $\Delta$--$\Gamma$ 조합에 대한 민감도 분석을 수행한다. 대규모 instance에서는 decomposition 또는 greedy 기반 heuristic을 적용하여 계산확장성을 검토한다. 강화학습은 본 연구의 본모형에서는 제외하고, 충분한 운영데이터가 확보된 이후 불확실성 예산이나 buffer 수준을 적응적으로 보정하는 확장방법으로만 검토한다.
+
+\section{References}
+\begin{enumerate}[label={(\arabic*)},leftmargin=*]
+    \item Silvente, J.; Kopanos, G. M.; Pistikopoulos, E. N.; Espuna, A. A rolling horizon optimization framework for simultaneous energy supply and demand planning in microgrids. \textit{Applied Energy}, 2015.
+    \item Glomb, L.; Liers, F.; Rosel, F. A rolling-horizon approach for multi-period optimization. \textit{European Journal of Operational Research}, 2022.
+    \item Guo, C.; Thompson, R. G.; Foliente, G.; Kong, X. T. R. An auction-enabled collaborative routing mechanism for omnichannel on-demand logistics through transshipment. \textit{Transportation Research Part E}, 2021.
+    \item Agrali, S.; Tan, B.; Karaesmen, F. Modeling and analysis of an auction-based logistics market. \textit{European Journal of Operational Research}, 2008.
+    \item Guo, J.; Zhang, J.; Cheng, T. C. E.; Zhao, S. Truthful double auction mechanisms for online freight platforms with transaction costs. \textit{Transportation Research Part B}, 2022.
+    \item Zhu, H.; Pei, Z. Two-stage robust liner container booking with uncertain customer demand. \textit{Mathematics}, 2023.
+\end{enumerate}
+
+\end{document}
