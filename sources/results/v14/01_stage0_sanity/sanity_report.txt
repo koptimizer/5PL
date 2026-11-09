@@ -1,0 +1,20 @@
+5PL Model 9.2 - Stage 0 Sanity Report
+================================================================
+
+Runs: 12
+Statuses: {'OPTIMAL': 12}
+All optimal: True
+Max |model robust RHS - theoretical target|: 105.45
+Robust-target monotonicity violations: 0
+Max objective reconstruction error: 1.74623e-09
+Gamma=0: best sanity Delta=1, objective=815206.552, service=0.9789
+Gamma=4: best sanity Delta=1, objective=806353.000, service=0.9866
+Gamma=8: best sanity Delta=1, objective=787919.390, service=0.9906
+Mean service rate by scenario: No-shock=0.9972, Network_Disruption=0.9768, Demand_Surge=0.9707
+
+Interpretation guide:
+- Robust target changes but xR does not: robust cover may still be non-binding relative to another bottleneck.
+- All capacity binding rates near 0: baseline may be too loose.
+- All capacity binding rates near 1 or infeasible: baseline may be too tight.
+- Delta=1 dominates every Gamma: do not force an interior optimum; first inspect whether long-cycle pooling has any modeled benefit.
+- Network_Disruption resembles No-shock: rho_capacity=1.25 and gamma=0.15 may be too mild; treat this as a calibration result, not a code error.

@@ -1,0 +1,56 @@
+[chain] start 2026-11-09 18:02:18
+{
+  "seed": 101,
+  "raw_sha256": "796377fa4081242fcf6bb5d9aaf481d8e2b4d9b48111e6a525af42e7881a501f",
+  "mean_daily_demand_A": 80.02142857142857,
+  "mean_daily_supply_A": 100.37857142857143,
+  "mean_supply_demand_ratio_A": 1.2544555137828663,
+  "mean_daily_demand_B": 79.81428571428572,
+  "mean_daily_supply_B": 100.14285714285714,
+  "mean_supply_demand_ratio_B": 1.2547423569565772,
+  "mean_nominal_weight_util": 0.7998249872219534,
+  "mean_nominal_volume_util": 0.7998255049805899
+}
+Structural necessary-check failures: 0 / 2100
+Saved raw data and diagnostics under: /home/kopt/5PL/sources/results/v14/00_raw_data
+gurobipy version: (13, 0, 3)
+Set parameter WLSAccessID
+Set parameter WLSSecret
+Set parameter LicenseID to value 2561211
+Academic license 2561211 - for non-commercial use only - registered to ko___@korea.ac.kr
+Gurobi initialization: OK
+[1/12] SOLVE seed=101, Gamma=0.0, Delta=1, h=1.0, F=200.0
+Set parameter WLSAccessID
+Set parameter WLSSecret
+Set parameter LicenseID to value 2561211
+Academic license 2561211 - for non-commercial use only - registered to ko___@korea.ac.kr
+    status=OPTIMAL obj=815206.551929365 xR=24446.872499999976 SR=0.9788881788491617 runtime=1.279s
+[2/12] SOLVE seed=101, Gamma=0.0, Delta=7, h=1.0, F=200.0
+    status=OPTIMAL obj=803934.8176644746 xR=24446.872499999998 SR=0.979754223517895 runtime=0.089s
+[3/12] SOLVE seed=101, Gamma=0.0, Delta=14, h=1.0, F=200.0
+    status=OPTIMAL obj=764756.1550230591 xR=24446.872499999998 SR=0.9800391626238026 runtime=0.035s
+[4/12] SOLVE seed=101, Gamma=0.0, Delta=28, h=1.0, F=200.0
+    status=OPTIMAL obj=683504.8868472972 xR=24446.872499999998 SR=0.981658513632398 runtime=0.017s
+[5/12] SOLVE seed=101, Gamma=4.0, Delta=1, h=1.0, F=200.0
+    status=OPTIMAL obj=806353.0001588974 xR=25281.54433836503 SR=0.9866282200059565 runtime=1.342s
+[6/12] SOLVE seed=101, Gamma=4.0, Delta=7, h=1.0, F=200.0
+    status=OPTIMAL obj=796713.6719098485 xR=25077.539037607778 SR=0.9865837752876156 runtime=0.073s
+[7/12] SOLVE seed=101, Gamma=4.0, Delta=14, h=1.0, F=200.0
+    status=OPTIMAL obj=758075.2126596207 xR=25087.75291610813 SR=0.9881861241324438 runtime=0.033s
+[8/12] SOLVE seed=101, Gamma=4.0, Delta=28, h=1.0, F=200.0
+    status=OPTIMAL obj=677571.4182288587 xR=25122.718208157075 SR=0.9914889687533025 runtime=0.016s
+[9/12] SOLVE seed=101, Gamma=8.0, Delta=1, h=1.0, F=200.0
+    status=OPTIMAL obj=787919.3902647443 xR=26852.4 SR=0.9906038536529058 runtime=1.086s
+[10/12] SOLVE seed=101, Gamma=8.0, Delta=7, h=1.0, F=200.0
+    status=OPTIMAL obj=777051.0168117626 xR=26852.4 SR=0.9921642501739198 runtime=0.070s
+[11/12] SOLVE seed=101, Gamma=8.0, Delta=14, h=1.0, F=200.0
+    status=OPTIMAL obj=738405.7885707149 xR=26852.4 SR=0.9936369745738305 runtime=0.030s
+[12/12] SOLVE seed=101, Gamma=8.0, Delta=28, h=1.0, F=200.0
+    status=OPTIMAL obj=658371.0193512118 xR=26852.4 SR=0.9982958466687305 runtime=0.016s
+
+[stage0] complete. Newly solved: 12. Results: /home/kopt/5PL/sources/results/v14/01_stage0_sanity
+[1/2100] SOLVE seed=101, Gamma=0.0, Delta=1, h=1.0, F=100.0
+Set parameter WLSAccessID
+Set parameter WLSSecret
+Set parameter LicenseID to value 2561211
+Academic license 2561211 - for non-commercial use only - registered to ko___@korea.ac.kr

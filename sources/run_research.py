@@ -20,6 +20,14 @@ Important implementation choices:
 - The same raw data are reused for the same seed across Gamma, Delta, and h^R sensitivity.
 - MMTR-MVCG pricing is NOT invented here; the model file only states it as post-processing.
   This pipeline exports positive-y trades so a pricing module can be attached later.
+
+v14 extensions (config section "extensions"; all keys absent -> exact v13 Baseline LP):
+- auction_fixed_cost F: -F * |T(Delta)| in the objective (per-auction operating cost).
+- terminal_backlog_wait_slots kappa: horizon-end backlog pays c_wait * kappa * ell_T.
+- service_level_min / service_shortfall_penalty: per-scenario soft service floor
+  u_s >= SL * D_s - shipped_s, penalised by rho * u_s.
+- F is an outer grid dimension like h_scale; stage4 (heuristics.py) and pricing
+  (pricing.py, MMTR-MVCG after Guo et al. 2022) consume solve_lp via fixed_x / solution_out.
 """
 
 from __future__ import annotations
@@ -65,6 +73,8 @@ def ensure_dirs(root: Path) -> None:
         "03_stage2_hcost_pilot",
         "04_stage2_hcost_full",
         "05_stage3_regret",
+        "06_stage4_heuristics",
+        "07_pricing",
         "logs",
         "iis",
         "figures",
@@ -470,6 +480,25 @@ def raw_diagnostics(raw: RawData, cfg: Mapping[str, Any]) -> Dict[str, Any]:
 # -----------------------------------------------------------------------------
 
 
+def ext_params(cfg: Mapping[str, Any]) -> Dict[str, float]:
+    # v14 extension parameters; every key absent reproduces the v13 Baseline LP exactly.
+    e = cfg.get("extensions", {})
+    return {
+        "f_default": float(e.get("auction_fixed_cost_default", 0.0)),
+        "kappa": float(e.get("terminal_backlog_wait_slots", 0.0)),
+        "sl_min": float(e.get("service_level_min", 0.0)),
+        "rho": float(e.get("service_shortfall_penalty", 0.0)),
+    }
+
+
+def f_cost_grid(cfg: Mapping[str, Any]) -> List[float]:
+    e = cfg.get("extensions", {})
+    grid = e.get("auction_fixed_cost_grid")
+    if grid:
+        return [float(x) for x in grid]
+    return [ext_params(cfg)["f_default"]]
+
+
 def import_gurobi():
     try:
         import gurobipy as gp
@@ -528,12 +557,19 @@ def solve_lp(
     gamma_budget: float,
     delta: int,
     h_scale: float = 1.0,
+    f_cost: float = 0.0,
+    fixed_x: Optional[Mapping[Tuple[int, int, int, int], float]] = None,
+    solution_out: Optional[Dict[str, Any]] = None,
     export_positive_trades: bool = False,
     solver_overrides: Optional[Mapping[str, Any]] = None,
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    # fixed_x: evaluate a given first-stage contract with exact LP recourse (robust cover dropped).
+    # solution_out: if a dict is passed, xR / y / m values are stored into it for post-processing.
     gp, GRB = import_gurobi()
     mkt = cfg_market(cfg)
     imap = item_map(cfg)
+    ext = ext_params(cfg)
+    kappa, sl_min, rho = ext["kappa"], ext["sl_min"], ext["rho"]
     agg = aggregate(raw, cfg, int(delta))
     nslots = agg["nslots"]
     d_hat = agg["d_hat"]
@@ -552,7 +588,7 @@ def solve_lp(
     if solver_overrides:
         solver_cfg.update(solver_overrides)
 
-    model_name = f"{stage_name}_seed{seed}_G{sanitize_float(gamma_budget)}_D{delta}_h{sanitize_float(h_scale)}"
+    model_name = f"{stage_name}_seed{seed}_G{sanitize_float(gamma_budget)}_D{delta}_h{sanitize_float(h_scale)}_F{sanitize_float(f_cost)}"
     model = gp.Model(model_name)
     model.Params.OutputFlag = int(solver_cfg.get("output_flag", 0))
     model.Params.Threads = int(solver_cfg.get("threads", 4))
@@ -580,12 +616,19 @@ def solve_lp(
             for t in range(nslots) for s in range(len(scenarios))}
     y = {(i, j, k, l, t, s): model.addVar(lb=0.0, name=f"y[{i},{j},{k},{l},{t},{s}]")
          for (i, j, k, l) in arcs for t in range(nslots) for s in range(len(scenarios))}
+    u = {s: model.addVar(lb=0.0, name=f"u[{s}]") for s in range(len(scenarios))}
+    if fixed_x is not None:
+        for key, var in xR.items():
+            val = max(0.0, float(fixed_x.get(key, 0.0)))
+            var.LB = val
+            var.UB = val
     model.update()
 
     # Objective -----------------------------------------------------------------
     precontract_cost = gp.quicksum(
         float(h_scale) * raw.h[i, k, l] * var for (i, k, l, t), var in xR.items()
     )
+    auction_cost = float(f_cost) * float(nslots)
 
     scenario_exprs = []
     slot_wait_constants: Dict[int, float] = {}
@@ -611,14 +654,32 @@ def solve_lp(
             for j in range(mkt["J"])
             for l in range(len(mkt["items"]))
         )
-        scenario_exprs.append(float(sc["weight"]) * (trade_expr - slot_wait - backlog_wait))
+        # v14: horizon-end backlog waits kappa more slots of the final slot length.
+        terminal_wait = gp.quicksum(
+            c_wait * kappa * ell[nslots - 1] * mvar[j, l, nslots - 1, s]
+            for j in range(mkt["J"])
+            for l in range(len(mkt["items"]))
+        )
+        scenario_exprs.append(
+            float(sc["weight"]) * (trade_expr - slot_wait - backlog_wait - terminal_wait - rho * u[s])
+        )
 
-    model.setObjective(-precontract_cost + gp.quicksum(scenario_exprs), GRB.MAXIMIZE)
+    model.setObjective(-precontract_cost - auction_cost + gp.quicksum(scenario_exprs), GRB.MAXIMIZE)
+
+    # v14: per-scenario soft service floor u_s >= SL * D_s - shipped_s
+    for s in range(len(scenarios)):
+        total_d = float(d_real[:, :, :, s].sum())
+        model.addConstr(
+            u[s] >= sl_min * total_d - gp.quicksum(y[i, j, k, l, t, s] for (i, j, k, l) in arcs for t in range(nslots)),
+            name=f"service_soft[{s}]",
+        )
 
     # Constraints: first-stage robust cover ------------------------------------
     for l, item in enumerate(mkt["items"]):
         sellers = mkt["sellers_by_item"][item]
         for t in range(nslots):
+            if fixed_x is not None:
+                break
             model.addConstr(
                 gp.quicksum(xR[i, k, l, t] for i in sellers for k in range(mkt["K"]))
                 >= float(d_hat[:, l, t].sum())
@@ -727,6 +788,7 @@ def solve_lp(
         "gamma": float(gamma_budget),
         "delta": int(delta),
         "h_scale": float(h_scale),
+        "f_cost": float(f_cost),
         "status": st,
         "has_solution": has_solution,
         "runtime_sec": float(getattr(model, "Runtime", wall)),
@@ -753,10 +815,14 @@ def solve_lp(
     pre_cost = float(sum(float(h_scale) * raw.h[i, k, l] * v.X for (i, k, l, t), v in xR.items()))
     summary["precontract_qty"] = pre_qty
     summary["precontract_cost"] = pre_cost
+    summary["auction_cost"] = auction_cost
+    summary["n_auctions"] = int(nslots)
 
     weighted_trade = 0.0
     weighted_slot_wait = 0.0
     weighted_backlog_wait = 0.0
+    weighted_terminal = 0.0
+    weighted_service_pen = 0.0
     weighted_demand = 0.0
     weighted_shipped = 0.0
     weighted_final_backlog = 0.0
@@ -793,6 +859,9 @@ def solve_lp(
         ))
         slot_wait = float(slot_wait_constants[s])
         service = shipped / realized if realized > 0 else math.nan
+        terminal_cost = c_wait * kappa * float(ell[nslots - 1]) * final_backlog
+        shortfall = float(u[s].X)
+        service_pen = rho * shortfall
 
         scenario_rows.append({
             "stage": stage_name, "seed": seed, "gamma": gamma_budget, "delta": delta,
@@ -802,15 +871,21 @@ def solve_lp(
             "backlog_sum": backlog_sum, "final_backlog": final_backlog,
             "trade_surplus": trade_surplus, "slot_wait_cost": slot_wait,
             "backlog_wait_cost": backlog_wait,
-            "scenario_operating_term": trade_surplus - slot_wait - backlog_wait,
+            "terminal_backlog_cost": terminal_cost,
+            "service_shortfall": shortfall,
+            "service_penalty": service_pen,
+            "scenario_operating_term": trade_surplus - slot_wait - backlog_wait - terminal_cost - service_pen,
         })
 
         summary[f"service_{sc['name']}"] = service
         summary[f"final_backlog_{sc['name']}"] = final_backlog
+        summary[f"service_shortfall_{sc['name']}"] = shortfall
         wgt = float(sc["weight"])
         weighted_trade += wgt * trade_surplus
         weighted_slot_wait += wgt * slot_wait
         weighted_backlog_wait += wgt * backlog_wait
+        weighted_terminal += wgt * terminal_cost
+        weighted_service_pen += wgt * service_pen
         weighted_demand += wgt * realized
         weighted_shipped += wgt * shipped
         weighted_final_backlog += wgt * final_backlog
@@ -818,9 +893,14 @@ def solve_lp(
     summary["weighted_trade_surplus"] = weighted_trade
     summary["weighted_slot_wait_cost"] = weighted_slot_wait
     summary["weighted_backlog_wait_cost"] = weighted_backlog_wait
+    summary["weighted_terminal_backlog_cost"] = weighted_terminal
+    summary["weighted_service_penalty"] = weighted_service_pen
     summary["weighted_service_rate"] = weighted_shipped / weighted_demand if weighted_demand > 0 else math.nan
     summary["weighted_final_backlog"] = weighted_final_backlog
-    summary["objective_reconstructed"] = -pre_cost + weighted_trade - weighted_slot_wait - weighted_backlog_wait
+    summary["objective_reconstructed"] = (
+        -pre_cost - auction_cost + weighted_trade - weighted_slot_wait - weighted_backlog_wait
+        - weighted_terminal - weighted_service_pen
+    )
     summary["objective_reconstruction_error"] = summary["objective"] - summary["objective_reconstructed"]
 
     # Robust diagnostics ---------------------------------------------------------
@@ -903,6 +983,12 @@ def solve_lp(
     summary["run_weight_binding_rate"] = run_w_bind / run_total if run_total else math.nan
     summary["run_volume_binding_rate"] = run_v_bind / run_total if run_total else math.nan
 
+    if solution_out is not None:
+        solution_out["xR"] = {key: float(v.X) for key, v in xR.items()}
+        solution_out["y"] = {key: float(v.X) for key, v in y.items() if v.X > 1e-9}
+        solution_out["m"] = {key: float(v.X) for key, v in mvar.items()}
+        solution_out["u"] = {s: float(v.X) for s, v in u.items()}
+
     return summary, robust_rows, scenario_rows, capacity_rows, trade_rows
 
 
@@ -920,8 +1006,8 @@ def stage_folder(results_root: Path, stage: str) -> Path:
     }[stage]
 
 
-def run_key(seed: int, gamma: float, delta: int, h_scale: float) -> Tuple[int, float, int, float]:
-    return int(seed), round(float(gamma), 10), int(delta), round(float(h_scale), 10)
+def run_key(seed: int, gamma: float, delta: int, h_scale: float, f_cost: float = 0.0) -> Tuple[int, float, int, float, float]:
+    return int(seed), round(float(gamma), 10), int(delta), round(float(h_scale), 10), round(float(f_cost), 10)
 
 
 def completed_keys(summary_path: Path) -> set:
@@ -929,7 +1015,8 @@ def completed_keys(summary_path: Path) -> set:
     for r in read_rows(summary_path):
         try:
             if int(float(r.get("has_solution", "0"))) == 1:
-                keys.add(run_key(int(r["seed"]), float(r["gamma"]), int(r["delta"]), float(r["h_scale"])))
+                keys.add(run_key(int(r["seed"]), float(r["gamma"]), int(r["delta"]), float(r["h_scale"]),
+                                 float(r.get("f_cost") or 0.0)))
         except Exception:
             continue
     return keys
@@ -947,7 +1034,9 @@ def run_grid(
     resume: bool,
     export_positive_trades: bool = False,
     solver_overrides: Optional[Mapping[str, Any]] = None,
+    f_costs: Optional[Sequence[float]] = None,
 ) -> None:
+    f_costs = [float(x) for x in f_costs] if f_costs else [0.0]
     folder = stage_folder(results_root, stage)
     folder.mkdir(parents=True, exist_ok=True)
     summary_path = folder / "run_summary.csv"
@@ -961,7 +1050,7 @@ def run_grid(
             if pth.exists():
                 pth.unlink()
     done = completed_keys(summary_path) if resume else set()
-    total = len(seeds) * len(gammas) * len(deltas) * len(h_scales)
+    total = len(seeds) * len(gammas) * len(deltas) * len(h_scales) * len(f_costs)
     idx = 0
     new_count = 0
 
@@ -970,30 +1059,33 @@ def run_grid(
         save_daily_summary(raw, cfg, results_root)
         for gamma in gammas:
             for h_scale in h_scales:
-                for delta in deltas:
-                    idx += 1
-                    key = run_key(seed, gamma, delta, h_scale)
-                    if key in done:
-                        print(f"[{idx}/{total}] SKIP completed seed={seed}, Gamma={gamma}, Delta={delta}, h={h_scale}")
-                        continue
-                    print(f"[{idx}/{total}] SOLVE seed={seed}, Gamma={gamma}, Delta={delta}, h={h_scale}")
-                    summary, robust, scen, cap, trades = solve_lp(
-                        cfg, raw, results_root, stage, int(seed), float(gamma), int(delta), float(h_scale),
-                        export_positive_trades=export_positive_trades,
-                        solver_overrides=solver_overrides,
-                    )
-                    write_rows(summary_path, [summary], append=True)
-                    write_rows(robust_path, robust, append=True)
-                    write_rows(scenario_path, scen, append=True)
-                    write_rows(capacity_path, cap, append=True)
-                    if export_positive_trades:
-                        write_rows(trade_path, trades, append=True)
-                    new_count += 1
-                    print(
-                        f"    status={summary['status']} obj={summary.get('objective')} "
-                        f"xR={summary.get('precontract_qty')} SR={summary.get('weighted_service_rate')} "
-                        f"runtime={summary.get('runtime_sec'):.3f}s"
-                    )
+                for f_cost in f_costs:
+                    for delta in deltas:
+                        idx += 1
+                        key = run_key(seed, gamma, delta, h_scale, f_cost)
+                        tag = f"seed={seed}, Gamma={gamma}, Delta={delta}, h={h_scale}, F={f_cost}"
+                        if key in done:
+                            print(f"[{idx}/{total}] SKIP completed {tag}")
+                            continue
+                        print(f"[{idx}/{total}] SOLVE {tag}")
+                        summary, robust, scen, cap, trades = solve_lp(
+                            cfg, raw, results_root, stage, int(seed), float(gamma), int(delta), float(h_scale),
+                            f_cost=float(f_cost),
+                            export_positive_trades=export_positive_trades,
+                            solver_overrides=solver_overrides,
+                        )
+                        write_rows(summary_path, [summary], append=True)
+                        write_rows(robust_path, robust, append=True)
+                        write_rows(scenario_path, scen, append=True)
+                        write_rows(capacity_path, cap, append=True)
+                        if export_positive_trades:
+                            write_rows(trade_path, trades, append=True)
+                        new_count += 1
+                        print(
+                            f"    status={summary['status']} obj={summary.get('objective')} "
+                            f"xR={summary.get('precontract_qty')} SR={summary.get('weighted_service_rate')} "
+                            f"runtime={summary.get('runtime_sec'):.3f}s"
+                        )
 
     print(f"\n[{stage}] complete. Newly solved: {new_count}. Results: {folder}")
     make_stage_plots(summary_path, results_root / "figures" / stage, stage)
@@ -1015,17 +1107,19 @@ def make_stage_plots(summary_path: Path, figdir: Path, stage: str) -> None:
         return
 
     df = pd.DataFrame(rows)
-    for c in ["seed", "gamma", "delta", "h_scale", "objective", "precontract_qty", "weighted_service_rate"]:
+    if "f_cost" not in df.columns:
+        df["f_cost"] = 0.0
+    for c in ["seed", "gamma", "delta", "h_scale", "f_cost", "objective", "precontract_qty", "weighted_service_rate"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
+    df["f_cost"] = df["f_cost"].fillna(0.0)
     df = df[df["objective"].notna()].copy()
     if df.empty:
         return
     figdir.mkdir(parents=True, exist_ok=True)
 
-    # Mean objective by Delta for each Gamma, separately by h-scale if needed.
-    for hs in sorted(df["h_scale"].dropna().unique()):
-        sub = df[df["h_scale"] == hs]
+    # Mean objective by Delta for each Gamma, one figure per (h-scale, F) pair.
+    for (hs, fc), sub in df.groupby(["h_scale", "f_cost"]):
         g = sub.groupby(["gamma", "delta"], as_index=False)["objective"].mean()
         plt.figure(figsize=(8, 5))
         for gamma in sorted(g["gamma"].unique()):
@@ -1033,24 +1127,27 @@ def make_stage_plots(summary_path: Path, figdir: Path, stage: str) -> None:
             plt.plot(gg["delta"], gg["objective"], marker="o", label=f"Gamma={gamma:g}")
         plt.xlabel("Auction cycle Delta (days)")
         plt.ylabel("Mean net operational surplus")
-        plt.title(f"{stage}: Objective vs Delta (h scale={hs:g})")
+        plt.title(f"{stage}: Objective vs Delta (h scale={hs:g}, F={fc:g})")
         plt.legend()
         plt.tight_layout()
-        plt.savefig(figdir / f"objective_vs_delta_h{sanitize_float(float(hs))}.png", dpi=180)
+        suffix = f"h{sanitize_float(float(hs))}" + (f"_F{sanitize_float(float(fc))}" if fc else "")
+        plt.savefig(figdir / f"objective_vs_delta_{suffix}.png", dpi=180)
         plt.close()
 
-    plt.figure(figsize=(8, 5))
-    g = df.groupby(["gamma", "delta"], as_index=False)["weighted_service_rate"].mean()
-    for gamma in sorted(g["gamma"].unique()):
-        gg = g[g["gamma"] == gamma].sort_values("delta")
-        plt.plot(gg["delta"], gg["weighted_service_rate"], marker="o", label=f"Gamma={gamma:g}")
-    plt.xlabel("Auction cycle Delta (days)")
-    plt.ylabel("Mean weighted service rate")
-    plt.title(f"{stage}: Service rate vs Delta")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(figdir / "service_rate_vs_delta.png", dpi=180)
-    plt.close()
+    for fc, sub in df.groupby("f_cost"):
+        plt.figure(figsize=(8, 5))
+        g = sub.groupby(["gamma", "delta"], as_index=False)["weighted_service_rate"].mean()
+        for gamma in sorted(g["gamma"].unique()):
+            gg = g[g["gamma"] == gamma].sort_values("delta")
+            plt.plot(gg["delta"], gg["weighted_service_rate"], marker="o", label=f"Gamma={gamma:g}")
+        plt.xlabel("Auction cycle Delta (days)")
+        plt.ylabel("Mean weighted service rate")
+        plt.title(f"{stage}: Service rate vs Delta" + (f" (F={fc:g})" if fc else ""))
+        plt.legend()
+        plt.tight_layout()
+        suffix = f"_F{sanitize_float(float(fc))}" if fc else ""
+        plt.savefig(figdir / f"service_rate_vs_delta{suffix}.png", dpi=180)
+        plt.close()
 
 
 def build_sanity_report(
@@ -1128,7 +1225,14 @@ def build_sanity_report(
 # -----------------------------------------------------------------------------
 
 
-def stage3_regret(results_root: Path) -> None:
+COST_TERMS = [
+    "precontract_cost", "auction_cost", "weighted_slot_wait_cost", "weighted_backlog_wait_cost",
+    "weighted_terminal_backlog_cost", "weighted_service_penalty",
+]
+
+
+def stage3_regret(results_root: Path, cfg: Optional[Mapping[str, Any]] = None) -> None:
+    # Groups are (gamma, f_cost); v13 files without an f_cost column are treated as F=0.
     try:
         import pandas as pd
         import matplotlib
@@ -1141,13 +1245,24 @@ def stage3_regret(results_root: Path) -> None:
     if not src.exists() or src.stat().st_size == 0:
         raise RuntimeError("Stage1 run_summary.csv not found. Run stage1 first.")
     df = pd.read_csv(src)
-    for c in ["seed", "gamma", "delta", "h_scale", "objective", "weighted_service_rate", "precontract_qty", "weighted_final_backlog"]:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce")
+    if "f_cost" not in df.columns:
+        df["f_cost"] = 0.0
+    for c in ["weighted_trade_surplus"] + COST_TERMS:
+        if c not in df.columns:
+            df[c] = 0.0
+    num_cols = ["seed", "gamma", "delta", "h_scale", "f_cost", "objective", "weighted_service_rate",
+                "precontract_qty", "weighted_final_backlog", "weighted_trade_surplus"] + COST_TERMS
+    for c in num_cols:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    df["f_cost"] = df["f_cost"].fillna(0.0)
     df = df[(df["status"] == "OPTIMAL") & df["objective"].notna() & (df["h_scale"] == 1.0)].copy()
     # If a failed combination was later rerun successfully, keep the latest optimal row.
-    df = df.drop_duplicates(subset=["seed", "gamma", "delta", "h_scale"], keep="last")
-    expected = 5 * 5 * 28
+    df = df.drop_duplicates(subset=["seed", "gamma", "delta", "h_scale", "f_cost"], keep="last")
+    if cfg is not None:
+        st = cfg["study"]
+        expected = len(st["seeds"]) * len(st["gamma_grid"]) * len(st["delta_grid"]) * len(f_cost_grid(cfg))
+    else:
+        expected = 5 * 5 * 28
     if len(df) != expected:
         raise RuntimeError(
             f"Stage3 requires a complete Stage1 baseline: {expected} unique optimal rows are required, "
@@ -1156,50 +1271,96 @@ def stage3_regret(results_root: Path) -> None:
 
     outdir = results_root / "05_stage3_regret"
     outdir.mkdir(parents=True, exist_ok=True)
+    keys = ["gamma", "f_cost"]
 
     # Per-seed optimum
-    idx = df.groupby(["seed", "gamma"])["objective"].idxmax()
-    per_seed = df.loc[idx, ["seed", "gamma", "delta", "objective", "weighted_service_rate", "precontract_qty", "weighted_final_backlog"]].copy()
+    idx = df.groupby(["seed"] + keys)["objective"].idxmax()
+    per_seed = df.loc[idx, ["seed"] + keys + ["delta", "objective", "weighted_service_rate", "precontract_qty", "weighted_final_backlog"]].copy()
     per_seed = per_seed.rename(columns={"delta": "delta_star_seed", "objective": "objective_seed_opt"})
     per_seed.to_csv(outdir / "per_seed_optima.csv", index=False, encoding="utf-8-sig")
 
     # Common recommendation by mean objective
-    mean_obj = df.groupby(["gamma", "delta"], as_index=False)["objective"].mean().rename(columns={"objective": "mean_objective"})
-    idx2 = mean_obj.groupby("gamma")["mean_objective"].idxmax()
+    mean_obj = df.groupby(keys + ["delta"], as_index=False)["objective"].mean().rename(columns={"objective": "mean_objective"})
+    idx2 = mean_obj.groupby(keys)["mean_objective"].idxmax()
     rec = mean_obj.loc[idx2].copy().rename(columns={"delta": "delta_recommended"})
     rec.to_csv(outdir / "recommended_delta_by_gamma.csv", index=False, encoding="utf-8-sig")
 
     # Regret = seed-specific optimum minus objective at common recommended Delta.
-    merged = per_seed.merge(rec[["gamma", "delta_recommended", "mean_objective"]], on="gamma", how="left")
-    chosen = df.merge(rec[["gamma", "delta_recommended"]], on="gamma", how="left")
-    chosen = chosen[chosen["delta"] == chosen["delta_recommended"]][["seed", "gamma", "objective"]].rename(columns={"objective": "objective_recommended"})
-    regret = merged.merge(chosen, on=["seed", "gamma"], how="left")
+    merged = per_seed.merge(rec[keys + ["delta_recommended", "mean_objective"]], on=keys, how="left")
+    chosen = df.merge(rec[keys + ["delta_recommended"]], on=keys, how="left")
+    chosen = chosen[chosen["delta"] == chosen["delta_recommended"]][["seed"] + keys + ["objective"]].rename(columns={"objective": "objective_recommended"})
+    regret = merged.merge(chosen, on=["seed"] + keys, how="left")
     regret["regret"] = regret["objective_seed_opt"] - regret["objective_recommended"]
     regret["relative_regret"] = regret["regret"] / regret["objective_seed_opt"].abs().replace(0, np.nan)
     regret.to_csv(outdir / "regret_by_seed_gamma.csv", index=False, encoding="utf-8-sig")
 
-    summary = regret.groupby("gamma", as_index=False).agg(
+    summary = regret.groupby(keys, as_index=False).agg(
         recommended_delta=("delta_recommended", "first"),
         mean_regret=("regret", "mean"),
         max_regret=("regret", "max"),
         mean_relative_regret=("relative_regret", "mean"),
+        std_delta_star_seed=("delta_star_seed", "std"),
     )
     summary.to_csv(outdir / "regret_summary_by_gamma.csv", index=False, encoding="utf-8-sig")
+
+    # Objective decomposition (mean over seeds) explains why a Delta wins.
+    decomp = df.groupby(keys + ["delta"], as_index=False)[["objective", "weighted_trade_surplus", "weighted_service_rate"] + COST_TERMS].mean()
+    decomp.to_csv(outdir / "objective_decomposition.csv", index=False, encoding="utf-8-sig")
 
     # Curves
     figdir = results_root / "figures" / "stage3"
     figdir.mkdir(parents=True, exist_ok=True)
-    plt.figure(figsize=(8, 5))
-    for gamma in sorted(mean_obj["gamma"].unique()):
-        gg = mean_obj[mean_obj["gamma"] == gamma].sort_values("delta")
-        plt.plot(gg["delta"], gg["mean_objective"], marker="o", label=f"Gamma={gamma:g}")
-    plt.xlabel("Auction cycle Delta (days)")
-    plt.ylabel("Mean net operational surplus over seeds")
-    plt.title("Common auction-cycle selection")
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(figdir / "mean_objective_and_recommended_delta.png", dpi=180)
-    plt.close()
+    for fc, sub in mean_obj.groupby("f_cost"):
+        plt.figure(figsize=(8, 5))
+        for gamma in sorted(sub["gamma"].unique()):
+            gg = sub[sub["gamma"] == gamma].sort_values("delta")
+            plt.plot(gg["delta"], gg["mean_objective"], marker="o", label=f"Gamma={gamma:g}")
+            best = rec[(rec["gamma"] == gamma) & (rec["f_cost"] == fc)]
+            plt.scatter(best["delta_recommended"], best["mean_objective"], s=120, facecolors="none", edgecolors="k", zorder=5)
+        plt.xlabel("Auction cycle Delta (days)")
+        plt.ylabel("Mean net operational surplus over seeds")
+        plt.title("Common auction-cycle selection" + (f" (F={fc:g})" if fc else ""))
+        plt.legend()
+        plt.tight_layout()
+        suffix = f"_F{sanitize_float(float(fc))}" if fc else ""
+        plt.savefig(figdir / f"mean_objective_and_recommended_delta{suffix}.png", dpi=180)
+        plt.close()
+
+    if rec["f_cost"].nunique() > 1:
+        plt.figure(figsize=(7, 4.5))
+        for gamma in sorted(rec["gamma"].unique()):
+            gg = rec[rec["gamma"] == gamma].sort_values("f_cost")
+            plt.plot(gg["f_cost"], gg["delta_recommended"], marker="o", label=f"Gamma={gamma:g}")
+        plt.xlabel("Per-auction fixed cost F")
+        plt.ylabel("Recommended Delta* (days)")
+        plt.title("Delta* vs auction fixed cost")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(figdir / "delta_star_vs_F.png", dpi=180)
+        plt.close()
+
+    # Stacked cost decomposition by Delta, one panel per F at the median Gamma.
+    gam_mid = sorted(decomp["gamma"].unique())[len(decomp["gamma"].unique()) // 2]
+    for fc, sub in decomp[decomp["gamma"] == gam_mid].groupby("f_cost"):
+        sub = sub.sort_values("delta")
+        plt.figure(figsize=(9, 5))
+        bottom = np.zeros(len(sub))
+        for term in COST_TERMS:
+            vals = sub[term].to_numpy(dtype=float)
+            if np.allclose(vals, 0.0):
+                continue
+            plt.bar(sub["delta"], vals, bottom=bottom, label=term.replace("weighted_", ""))
+            bottom += vals
+        plt.plot(sub["delta"], sub["weighted_trade_surplus"], "k--", marker=".", label="trade surplus")
+        plt.plot(sub["delta"], sub["objective"], "r-", marker="o", label="objective")
+        plt.xlabel("Auction cycle Delta (days)")
+        plt.ylabel("Mean value over seeds")
+        plt.title(f"Cost decomposition vs Delta (Gamma={gam_mid:g}" + (f", F={fc:g})" if fc else ")"))
+        plt.legend(fontsize=8)
+        plt.tight_layout()
+        suffix = f"_F{sanitize_float(float(fc))}" if fc else ""
+        plt.savefig(figdir / f"cost_decomposition_G{sanitize_float(float(gam_mid))}{suffix}.png", dpi=180)
+        plt.close()
 
     print("\nStage3 complete")
     print(rec.to_string(index=False))
@@ -1279,9 +1440,9 @@ def command_check(cfg: Mapping[str, Any], results_root: Path, overwrite_data: bo
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="5PL Model 9.2 Gurobi research pipeline")
-    p.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="Path to config_baseline.json")
-    p.add_argument("--results", type=Path, default=DEFAULT_RESULTS, help="Results root directory")
+    p = argparse.ArgumentParser(description="5PL two-stage robust pipeline (Model 9.2 Baseline + v14 extensions)")
+    p.add_argument("--config", type=Path, default=DEFAULT_CONFIG, help="Path to config json (config_baseline.json / config_v14.json)")
+    p.add_argument("--results", type=Path, default=None, help="Results root (default: results/<study.results_subdir>)")
     p.add_argument("--overwrite-data", action="store_true", help="Regenerate cached raw data for the same seed")
     p.add_argument("--no-resume", action="store_true", help="Do not skip already-completed combinations")
     p.add_argument("--threads", type=int, default=None)
@@ -1291,18 +1452,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("check", help="Raw-data reproducibility and Gurobi environment check")
-    sub.add_parser("stage0", help="Seed101 sanity check: 12 LPs")
-    sub.add_parser("stage1", help="Baseline main experiment: 700 LPs")
-    sub.add_parser("stage2a", help="hR sensitivity pilot: 60 LPs")
-    sub.add_parser("stage2b", help="hR sensitivity full Delta: 420 LPs")
-    sub.add_parser("stage3", help="Recommended Delta and Regret from Stage1")
-    sub.add_parser("all", help="Run check -> stage0 -> stage1 -> stage2a -> stage3")
+    sub.add_parser("stage0", help="Seed101 sanity check: Gamma {0,4,8} x Delta {1,7,14,28} at default F")
+    sub.add_parser("stage1", help="Baseline main experiment: seeds x Gamma grid x F grid x Delta 1..28")
+    sub.add_parser("stage2a", help="hR sensitivity pilot at default F")
+    sub.add_parser("stage2b", help="hR sensitivity full Delta at default F")
+    sub.add_parser("stage3", help="Recommended Delta, Regret and cost decomposition from Stage1")
+    sub.add_parser("stage4", help="Heuristic policies vs exact LP (heuristics.py)")
+    sub.add_parser("pricing", help="MMTR-MVCG post-processing at recommended Delta (pricing.py)")
+    sub.add_parser("all", help="Run check -> stage0 -> stage1 -> stage2a -> stage3 -> stage4 -> pricing")
 
     one = sub.add_parser("one", help="Solve one custom LP")
     one.add_argument("--seed", type=int, default=101)
     one.add_argument("--gamma", type=float, default=4.0)
     one.add_argument("--delta", type=int, default=7)
     one.add_argument("--h-scale", type=float, default=1.0)
+    one.add_argument("--f-cost", type=float, default=None, help="Per-auction fixed cost (default: extensions default)")
     one.add_argument("--export-trades", action="store_true")
 
     custom = sub.add_parser("custom-grid", help="Custom LP grid")
@@ -1310,6 +1474,7 @@ def build_parser() -> argparse.ArgumentParser:
     custom.add_argument("--gammas", type=str, default="0,4,8")
     custom.add_argument("--deltas", type=str, default="1,7,14,28")
     custom.add_argument("--h-scales", type=str, default="1.0")
+    custom.add_argument("--f-costs", type=str, default=None)
     return p
 
 
@@ -1329,10 +1494,22 @@ def solver_overrides_from_args(args: argparse.Namespace) -> Dict[str, Any]:
 def main() -> int:
     args = build_parser().parse_args()
     cfg = load_json(args.config)
-    results_root = args.results.resolve()
+    if args.results is None:
+        results_root = (DEFAULT_RESULTS / str(cfg["study"].get("results_subdir", "v13"))).resolve()
+    else:
+        results_root = args.results.resolve()
     ensure_dirs(results_root)
     resume = not args.no_resume
     solver_overrides = solver_overrides_from_args(args)
+    f_default = ext_params(cfg)["f_default"]
+    f_grid = f_cost_grid(cfg)
+    seeds = [int(x) for x in cfg["study"]["seeds"]]
+    gammas = [float(x) for x in cfg["study"]["gamma_grid"]]
+    deltas = [int(x) for x in cfg["study"].get("delta_grid", list(range(1, 29)))]
+    sanity_g = [float(x) for x in cfg["study"].get("sanity_gammas", [0, 4, 8])]
+    sanity_d = [int(x) for x in cfg["study"].get("sanity_deltas", [1, 7, 14, 28])]
+    hscales = [float(x) for x in cfg["study"]["h_scale_grid"]]
+    ext_cfg = cfg.get("extensions", {})
 
     # Save exact config used for auditability.
     manifest = {
@@ -1347,48 +1524,63 @@ def main() -> int:
         json.dumps(manifest, indent=2, ensure_ascii=False), encoding="utf-8"
     )
 
+    def do_stage0() -> None:
+        run_grid(cfg, results_root, "stage0", [101], sanity_g, sanity_d, [1.0],
+                 args.overwrite_data, resume, solver_overrides=solver_overrides, f_costs=[f_default])
+
+    def do_stage1() -> None:
+        run_grid(cfg, results_root, "stage1", seeds, gammas, deltas, [1.0],
+                 args.overwrite_data, resume, solver_overrides=solver_overrides, f_costs=f_grid)
+
+    def do_stage2(stage: str, dl: Sequence[int]) -> None:
+        run_grid(cfg, results_root, stage, [101], sanity_g, dl, hscales,
+                 args.overwrite_data, resume, solver_overrides=solver_overrides, f_costs=[f_default])
+
+    def do_stage4() -> None:
+        import heuristics
+        g4 = [float(x) for x in ext_cfg.get("stage4_gammas", gammas)]
+        heuristics.run_stage4(cfg, results_root, seeds, g4, f_grid, deltas, 1.0, resume, solver_overrides)
+
+    def do_pricing() -> None:
+        import pricing
+        gp_ = [float(x) for x in ext_cfg.get("pricing_gammas", gammas)]
+        pricing.run_pricing(cfg, results_root, int(ext_cfg.get("pricing_seed", 101)), gp_, f_grid, 1.0, solver_overrides)
+
     if args.command == "check":
         command_check(cfg, results_root, args.overwrite_data)
         return 0
-
     if args.command == "stage0":
-        run_grid(cfg, results_root, "stage0", [101], [0, 4, 8], [1, 7, 14, 28], [1.0],
-                 args.overwrite_data, resume, solver_overrides=solver_overrides)
+        do_stage0()
         return 0
-
     if args.command == "stage1":
-        seeds = [int(x) for x in cfg["study"]["seeds"]]
-        gammas = [float(x) for x in cfg["study"]["gamma_grid"]]
-        deltas = list(range(1, 29))
-        run_grid(cfg, results_root, "stage1", seeds, gammas, deltas, [1.0],
-                 args.overwrite_data, resume, solver_overrides=solver_overrides)
+        do_stage1()
         return 0
-
     if args.command == "stage2a":
-        hscales = [float(x) for x in cfg["study"]["h_scale_grid"]]
-        run_grid(cfg, results_root, "stage2a", [101], [0, 4, 8], [1, 7, 14, 28], hscales,
-                 args.overwrite_data, resume, solver_overrides=solver_overrides)
+        do_stage2("stage2a", sanity_d)
         return 0
-
     if args.command == "stage2b":
-        hscales = [float(x) for x in cfg["study"]["h_scale_grid"]]
-        run_grid(cfg, results_root, "stage2b", [101], [0, 4, 8], list(range(1, 29)), hscales,
-                 args.overwrite_data, resume, solver_overrides=solver_overrides)
+        do_stage2("stage2b", deltas)
         return 0
-
     if args.command == "stage3":
-        stage3_regret(results_root)
+        stage3_regret(results_root, cfg)
+        return 0
+    if args.command == "stage4":
+        do_stage4()
+        return 0
+    if args.command == "pricing":
+        do_pricing()
         return 0
 
     if args.command == "one":
         raw = load_or_create_raw(cfg, results_root, args.seed, overwrite=args.overwrite_data)
+        fc = f_default if args.f_cost is None else float(args.f_cost)
         summary, robust, scen, cap, trades = solve_lp(
-            cfg, raw, results_root, "one", args.seed, args.gamma, args.delta, args.h_scale,
+            cfg, raw, results_root, "one", args.seed, args.gamma, args.delta, args.h_scale, f_cost=fc,
             export_positive_trades=args.export_trades, solver_overrides=solver_overrides,
         )
         one_dir = results_root / "one"
         one_dir.mkdir(parents=True, exist_ok=True)
-        stem = f"seed{args.seed}_G{sanitize_float(args.gamma)}_D{args.delta}_h{sanitize_float(args.h_scale)}"
+        stem = f"seed{args.seed}_G{sanitize_float(args.gamma)}_D{args.delta}_h{sanitize_float(args.h_scale)}_F{sanitize_float(fc)}"
         write_rows(one_dir / f"{stem}_summary.csv", [summary])
         write_rows(one_dir / f"{stem}_robust.csv", robust)
         write_rows(one_dir / f"{stem}_scenarios.csv", scen)
@@ -1399,26 +1591,23 @@ def main() -> int:
         return 0
 
     if args.command == "custom-grid":
-        seeds = parse_num_list(args.seeds, int) or [101]
-        gammas = parse_num_list(args.gammas, float) or [0.0, 4.0, 8.0]
-        deltas = parse_num_list(args.deltas, int) or [1, 7, 14, 28]
-        hscales = parse_num_list(args.h_scales, float) or [1.0]
-        run_grid(cfg, results_root, "stage0", seeds, gammas, deltas, hscales,
-                 args.overwrite_data, resume, solver_overrides=solver_overrides)
+        cseeds = parse_num_list(args.seeds, int) or [101]
+        cgammas = parse_num_list(args.gammas, float) or [0.0, 4.0, 8.0]
+        cdeltas = parse_num_list(args.deltas, int) or [1, 7, 14, 28]
+        chs = parse_num_list(args.h_scales, float) or [1.0]
+        cfs = parse_num_list(args.f_costs, float) or [f_default]
+        run_grid(cfg, results_root, "stage0", cseeds, cgammas, cdeltas, chs,
+                 args.overwrite_data, resume, solver_overrides=solver_overrides, f_costs=cfs)
         return 0
 
     if args.command == "all":
         command_check(cfg, results_root, args.overwrite_data)
-        run_grid(cfg, results_root, "stage0", [101], [0, 4, 8], [1, 7, 14, 28], [1.0],
-                 args.overwrite_data, resume, solver_overrides=solver_overrides)
-        seeds = [int(x) for x in cfg["study"]["seeds"]]
-        gammas = [float(x) for x in cfg["study"]["gamma_grid"]]
-        run_grid(cfg, results_root, "stage1", seeds, gammas, list(range(1, 29)), [1.0],
-                 args.overwrite_data, resume, solver_overrides=solver_overrides)
-        hscales = [float(x) for x in cfg["study"]["h_scale_grid"]]
-        run_grid(cfg, results_root, "stage2a", [101], [0, 4, 8], [1, 7, 14, 28], hscales,
-                 args.overwrite_data, resume, solver_overrides=solver_overrides)
-        stage3_regret(results_root)
+        do_stage0()
+        do_stage1()
+        do_stage2("stage2a", sanity_d)
+        stage3_regret(results_root, cfg)
+        do_stage4()
+        do_pricing()
         return 0
 
     raise RuntimeError(f"Unknown command: {args.command}")

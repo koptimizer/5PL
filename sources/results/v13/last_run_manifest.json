@@ -1,0 +1,8 @@
+{
+  "config_path": "/home/kopt/5PL/sources/config_baseline.json",
+  "config_sha256": "4075e83111c82c832e1650895c7e3e117255908509a4c1e4b266dd827ec1fa0c",
+  "data_generation_fingerprint": "d224f883fc001e5010b9b727dce09f449a60ace305287ce50a8077d8eacfe799",
+  "command": "stage2b",
+  "results_root": "/home/kopt/5PL/sources/results/v13",
+  "timestamp_local": "2026-11-09 18:01:39"
+}

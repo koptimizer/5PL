@@ -1,6 +1,20 @@
-# 5PL Gurobi 연구 파이프라인 — 통합모형 9.2
+# 5PL Gurobi 연구 파이프라인 — 통합모형 9.2 Baseline (v13) + v14 확장
 
 이 패키지는 `../docs/tex/중견연구 통합모형_9.2.tex`의 **Baseline two-stage robust LP**를 연구 순서대로 실행하도록 만든 코드입니다.
+버전별 변경 내용은 `../docs/version.md`를 참고하세요.
+
+## v14 요약 (2026-11)
+
+- 설정 파일로 버전을 고릅니다: `--config config_baseline.json` (v13, 결과 `results/v13/`), `--config config_v14.json` (v14, 결과 `results/v14/`).
+- `extensions` 절이 없으면 v13 LP와 완전히 같은 결과가 나옵니다 (검증: seed 101, Γ=4, Δ=7 → 801999.337 일치).
+- v14 확장: 경매 1회 고정비 `F` (outer grid), 종료 backlog 패널티 `κ`, 시나리오별 soft 서비스율 (`SL_min`, `ρ`).
+- 새 명령:
+  - `stage4`: `heuristics.py` — 계약규칙 {nominal, bs_greedy, full} × 매칭규칙 {lp, greedy} + exact__greedy를 정확해와 비교. 결과 `06_stage4_heuristics/`, 그림 `figures/stage4/`.
+  - `pricing`: `pricing.py` — Guo et al. (2022) MMTR–MVCG 가격청산을 Stage 3의 Δ*에 적용. 결과 `07_pricing/`, 그림 `figures/pricing/`.
+  - `stage3`는 (Γ, F) 그룹별 추천 Δ*, regret, 목적함수 분해(`objective_decomposition.csv`)를 냅니다.
+- 전체 연쇄 실행: `bash scripts/run_v14_chain.sh` (check → stage0 → stage1 → stage3 → stage4 → pricing, 로그 `results/v14/logs/`).
+
+---
 
 ## 0. 무엇을 구현했나
 

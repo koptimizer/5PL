@@ -31,11 +31,18 @@ B2B 미들마일 물류에서는 수요가 특정 기간에 집중되거나 운�
 │       ├── reviewer.md
 │       └── verifier.md
 ├── docs: 구현 및 연구 관련 정리 문서
-│   └── tex
+│   ├── tex: 모형·시나리오·검토 문서 (최신 모형 = 중견연구 통합모형_9.2.tex)
+│   └── version.md: 버전 히스토리 (v13부터)
 ├── refs: 선행연구 문헌 폴더
 ├── sources: 소스코드 폴더
-│   └── results: 소스코드 결과 및 시각화 폴더
-│   └── scripts: 스크립트 폴더
+│   ├── run_research.py: 2-stage robust LP 파이프라인 (check / stage0-4 / pricing / one / custom-grid)
+│   ├── heuristics.py: Stage 4 heuristic 정책 (계약규칙 × 매칭규칙) vs 정확해
+│   ├── pricing.py: MMTR–MVCG 사후 가격청산 (Guo et al. 2022)
+│   ├── config_baseline.json: v13 설정 (results/v13), config_v14.json: v14 설정 (results/v14)
+│   ├── README_KO.md, MODEL_MAPPING.md: 실행 안내 및 문서–코드 매핑
+│   ├── results/<version>: 버전별 결과 및 figures (00_raw_data는 seed별 캐시, 버전 간 동일)
+│   └── scripts: 연쇄 실행 스크립트 (run_v14_chain.sh, run_stage2b_v13.sh, 기존 .bat)
+├── .gitignore
 └── CLAUDE.md: 본 파일
 
 ## 4. 코딩 컨벤션 합의
