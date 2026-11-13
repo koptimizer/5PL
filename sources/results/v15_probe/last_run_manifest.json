@@ -1,0 +1,8 @@
+{
+  "config_path": "/home/kopt/5PL/sources/config_v15.json",
+  "config_sha256": "6ca1eabe55836ed9ae6cd5653268a0cd3235768f611ec43b6f0bd6e6b9664fd7",
+  "data_generation_fingerprint": "06d6aacf32fafa0514fadfb93ff55ed36c5be62efce68ecd1bc9cfe6bb9b0215",
+  "command": "custom-grid",
+  "results_root": "/home/kopt/5PL/sources/results/v15_probe",
+  "timestamp_local": "2026-11-13 19:56:08"
+}

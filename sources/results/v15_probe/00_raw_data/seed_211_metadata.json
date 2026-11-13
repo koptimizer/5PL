@@ -1,0 +1,60 @@
+{
+  "seed": 211,
+  "generation_fingerprint": "06d6aacf32fafa0514fadfb93ff55ed36c5be62efce68ecd1bc9cfe6bb9b0215",
+  "config_version": "9.2",
+  "raw_sha256": "d32adbdabfecfe4620cad99b597e4dc5d769aee1d64425c1b5b98909cbd4acb3",
+  "data_generation_parameters": {
+    "market": {
+      "n_sellers": 6,
+      "n_buyers": 8,
+      "n_carriers": 4,
+      "items": [
+        "A",
+        "B"
+      ],
+      "sellers_by_item": {
+        "A": [
+          0,
+          1,
+          2
+        ],
+        "B": [
+          3,
+          4,
+          5
+        ]
+      },
+      "weight": {
+        "A": 10.0,
+        "B": 2.0
+      },
+      "volume": {
+        "A": 2.0,
+        "B": 10.0
+      }
+    },
+    "data": {
+      "demand_poisson_lambda": 10.0,
+      "rho_supply": 1.25,
+      "rho_capacity": 1.25,
+      "demand_deviation_rate": 0.2,
+      "seller_allocation_low": 0.9,
+      "seller_allocation_high": 1.1,
+      "carrier_allocation_low": 0.9,
+      "carrier_allocation_high": 1.1,
+      "realization_noise_rate": 0.2,
+      "realization_noise_mode": "market"
+    },
+    "economics": {
+      "a_low": 120.0,
+      "a_high": 180.0,
+      "b_low": 60.0,
+      "b_high": 100.0,
+      "c_low": 15.0,
+      "c_high": 35.0,
+      "h_low": 10.0,
+      "h_high": 14.0,
+      "c_wait": 0.5
+    }
+  }
+}
