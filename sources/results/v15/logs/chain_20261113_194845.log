@@ -1,0 +1,26 @@
+[chain] start 2026-11-13 19:48:45 config=config_v15.json results=results/v15
+{
+  "seed": 101,
+  "raw_sha256": "016b0f0c15a01199836fdbf90ecc8fef605d6fb67462f7e1492e8f3aaaf6ea29",
+  "mean_daily_demand_A": 80.02142857142857,
+  "mean_daily_supply_A": 100.37857142857143,
+  "mean_supply_demand_ratio_A": 1.2544555137828663,
+  "mean_daily_demand_B": 79.81428571428572,
+  "mean_daily_supply_B": 100.14285714285714,
+  "mean_supply_demand_ratio_B": 1.2547423569565772,
+  "mean_nominal_weight_util": 0.7998249872219534,
+  "mean_nominal_volume_util": 0.7998255049805899
+}
+Structural necessary-check failures: 0 / 2100
+Saved raw data and diagnostics under: /home/kopt/5PL/sources/results/v15/00_raw_data
+gurobipy version: (13, 0, 3)
+Set parameter WLSAccessID
+Set parameter WLSSecret
+Set parameter LicenseID to value 2561211
+Academic license 2561211 - for non-commercial use only - registered to ko___@korea.ac.kr
+Gurobi initialization: OK
+[1/12] SOLVE seed=101, Gamma=0.0, Delta=1, h=1.0, F=200.0
+Set parameter WLSAccessID
+Set parameter WLSSecret
+Set parameter LicenseID to value 2561211
+Academic license 2561211 - for non-commercial use only - registered to ko___@korea.ac.kr

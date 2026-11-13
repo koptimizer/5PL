@@ -184,6 +184,12 @@ class RawData:
     h: np.ndarray            # [I, K, L]
     xi: np.ndarray           # [J, L, R]
     metadata: Dict[str, Any]
+    eps: Optional[np.ndarray] = None  # [J, L, R] v15 daily realization multiplier; None = deterministic (v13/v14)
+
+
+def realized_daily_demand(raw: "RawData") -> np.ndarray:
+    # Daily realized demand before scenario scaling: nominal x noise (v15) or nominal (v13/v14)
+    return raw.demand if raw.eps is None else raw.demand * raw.eps
 
 
 def cfg_market(cfg: Mapping[str, Any]) -> Dict[str, Any]:
@@ -206,7 +212,8 @@ def item_map(cfg: Mapping[str, Any]) -> Dict[str, int]:
 
 def spawn_rngs(seed: int) -> Dict[str, np.random.Generator]:
     # Independent substreams as specified in the research design.
-    names = ["demand", "supply_alloc", "capacity_alloc", "economics"]
+    # "realization" is appended last so the first four substreams are identical to v13/v14.
+    names = ["demand", "supply_alloc", "capacity_alloc", "economics", "realization"]
     ss = np.random.SeedSequence(int(seed))
     children = ss.spawn(len(names))
     return {n: np.random.default_rng(ch) for n, ch in zip(names, children)}
@@ -280,17 +287,34 @@ def generate_raw_data(cfg: Mapping[str, Any], seed: int) -> RawData:
     h = erng.uniform(float(ecfg["h_low"]), float(ecfg["h_high"]), size=(m["I"], m["K"], len(items)))
     xi = float(dcfg["demand_deviation_rate"]) * demand
 
+    # v15: independent daily multiplicative noise in [1-rate, 1+rate], shared by all execution scenarios,
+    # so slot aggregation pools day-level deviations while realizations stay inside the budgeted set.
+    # mode "market": one factor per (item, day) shared by all buyers (market-wide daily shock);
+    # mode "buyer" : independent factor per (buyer, item, day), which already averages out across buyers at Delta=1.
+    noise_rate = float(dcfg.get("realization_noise_rate", 0.0))
+    noise_mode = str(dcfg.get("realization_noise_mode", "market"))
+    eps = None
+    if noise_rate > 0.0:
+        if noise_mode == "buyer":
+            eps = rng["realization"].uniform(1.0 - noise_rate, 1.0 + noise_rate, size=demand.shape)
+        else:
+            day_factor = rng["realization"].uniform(1.0 - noise_rate, 1.0 + noise_rate, size=(1, len(items), m["R"]))
+            eps = np.broadcast_to(day_factor, demand.shape).copy()
+
     meta = {
         "seed": int(seed),
         "generation_fingerprint": data_generation_fingerprint(cfg),
         "config_version": cfg["study"].get("version", "9.2"),
     }
-    return RawData(demand, supply, cap_w, cap_v, a, b, c, h, xi, meta)
+    return RawData(demand, supply, cap_w, cap_v, a, b, c, h, xi, meta, eps)
 
 
 def raw_hash(raw: RawData) -> str:
     h = hashlib.sha256()
-    for arr in [raw.demand, raw.supply, raw.cap_w, raw.cap_v, raw.a, raw.b, raw.c, raw.h, raw.xi]:
+    arrays = [raw.demand, raw.supply, raw.cap_w, raw.cap_v, raw.a, raw.b, raw.c, raw.h, raw.xi]
+    if raw.eps is not None:
+        arrays.append(raw.eps)
+    for arr in arrays:
         h.update(np.ascontiguousarray(arr).tobytes())
     h.update(json.dumps(raw.metadata, sort_keys=True).encode("utf-8"))
     return h.hexdigest()
@@ -303,6 +327,7 @@ def raw_paths(results_root: Path, seed: int) -> Tuple[Path, Path]:
 
 def save_raw(raw: RawData, results_root: Path, cfg: Mapping[str, Any]) -> None:
     npz, meta = raw_paths(results_root, int(raw.metadata["seed"]))
+    extra = {"eps": raw.eps} if raw.eps is not None else {}
     np.savez_compressed(
         npz,
         demand=raw.demand,
@@ -314,6 +339,7 @@ def save_raw(raw: RawData, results_root: Path, cfg: Mapping[str, Any]) -> None:
         c=raw.c,
         h=raw.h,
         xi=raw.xi,
+        **extra,
     )
     payload = dict(raw.metadata)
     payload["raw_sha256"] = raw_hash(raw)
@@ -350,6 +376,7 @@ def load_or_create_raw(
                 "generation_fingerprint": expected_fp,
                 "config_version": cfg["study"].get("version", "9.2"),
             },
+            eps=z["eps"] if "eps" in z.files else None,
         )
         if meta.get("raw_sha256") and meta["raw_sha256"] != raw_hash(raw):
             raise RuntimeError(f"Raw data hash mismatch for seed={seed}; cached file may be corrupted.")
@@ -373,6 +400,7 @@ def save_daily_summary(raw: RawData, cfg: Mapping[str, Any], results_root: Path)
             d = float(raw.demand[:, l, r].sum())
             s = float(raw.supply[:, l, r].sum())
             row[f"demand_{item}"] = d
+            row[f"realized_demand_{item}"] = float(realized_daily_demand(raw)[:, l, r].sum())
             row[f"supply_{item}"] = s
             row[f"supply_demand_ratio_{item}"] = s / d if d > 0 else math.nan
             w_need += m["weight"][item] * d
@@ -419,10 +447,16 @@ def aggregate(raw: RawData, cfg: Mapping[str, Any], delta: int) -> Dict[str, Any
         ell[t] = float(len(days))
         tau[t] = (ell[t] - 1.0) / 2.0
 
+    # Realized slot demand pools daily realizations (identical to d_hat when no v15 noise).
+    daily_real = realized_daily_demand(raw)
+    d_base = np.zeros_like(d_hat)
+    for t, days in enumerate(day_groups):
+        d_base[:, :, t] = daily_real[:, :, days].sum(axis=2)
+
     scenarios = cfg["scenarios"]
     d_real = np.zeros((m["J"], L, nslots, len(scenarios)), dtype=float)
     for s, sc in enumerate(scenarios):
-        d_real[:, :, :, s] = (1.0 + float(sc["theta"])) * d_hat
+        d_real[:, :, :, s] = (1.0 + float(sc["theta"])) * d_base
 
     return {
         "nslots": nslots,

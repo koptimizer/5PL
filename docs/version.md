@@ -57,4 +57,18 @@
     Γ=4·Demand_Surge에서 1.05 > 1인 것은 LP의 y가 서비스 패널티 때문에 음(−)의 잉여 arc까지 실었기 때문(시장 LP는 정적이라 이를 싣지 않음).
   - 구매자 청산가 평균 128(No-shock)~139(Surge), 판매자+운송업체 지급 115~119 → 플랫폼 마진율 9.5%(No-shock)~14.7%(Surge/Disruption). 충격 시나리오에서 한계거래가 비싸지며 마진이 커지는 방향.
   - 가격은 Δ* 선택에 영향을 주지 않음(사후처리). 결과: `07_pricing/`, 그림 `figures/pricing/`.
-- 사이클 종료 시 할 일: GitHub push (인증 필요), v15 설계(일 단위 수요 노이즈로 pooling 이익 모형화) 논의.
+- 사이클 종료 (2026-11-13): 대용량 진단 csv(capacity/robust_diagnostics, positive_trades, pricing 시장/에이전트 csv)는 git에서 제외하고
+  히스토리를 재작성 (pack 58MB). push는 GitHub 인증 부재(403)로 보류.
+
+## v15 — 일 단위 시장 공통 수요 충격으로 pooling 이익 모형화 (2026-11-13 시작)
+- 동기: v14에서 Δ*가 Γ와 완전히 독립이었던 구조적 이유(실현수요가 결정적 스케일)를 해소.
+- 데이터 변경 (`config_v15.json`, `data.realization_noise_rate = 0.2`, `realization_noise_mode = "market"`):
+  - 품목·일별 공통 계수 ε_{l,r} ~ U[0.8, 1.2]를 뽑아 실현 일수요 = 명목 × ε. 모든 실행 시나리오가 같은 ε를 공유하고 θ로 스케일.
+  - 슬롯 집계 시 일별 편차가 평균화되어 |실현−명목|/명목이 Δ=1: 6.7% → Δ=7: 2.5% → Δ=28: 1.1% (seed 101).
+  - |ε−1| ≤ 0.2 = 수요편차율이므로 실현값은 항상 budgeted uncertainty set 내부 (Γ=J 커버가 최악치를 보장).
+  - 명목 데이터(수요·공급·용량·경제 파라미터)는 RNG 하위스트림을 뒤에 추가해 v13/v14와 비트 단위 동일. v14 설정으로 돌리면 결과 불변 (796713.672 재확인).
+  - "buyer" 모드(구매자별 독립 노이즈)도 구현했으나 집계 제약이 구매자 합이라 Δ=1에서 이미 평균화됨(편차 2.3%) → 주 실험은 "market" 모드.
+- 코드: `RawData.eps`, `realized_daily_demand()`, `aggregate()`의 d_real이 실현 일수요 합을 사용. heuristics/pricing은 agg를 쓰므로 자동 반영.
+- 실험 그리드: v14와 동일 (Stage 0/1/3/4/pricing, F{100,200,400}), 연쇄 스크립트 `scripts/run_chain.sh config_v15.json`.
+- 사전 관찰 (seed 101, F=200): Γ=0에서 backlog 대기비 Δ1 9024 → Δ7 7894, Γ=8에서 1459 → 411. pooling 이익은 존재하나 슬롯 대기비 증가(≈5600/step)보다 작음.
+- 결과: `sources/results/v15/` (실험 종료 후 기록)

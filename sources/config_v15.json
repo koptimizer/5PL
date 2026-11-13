@@ -1,0 +1,174 @@
+{
+  "study": {
+    "name": "5PL_middle_mile_robust_precontract_auction_cycle",
+    "version": "9.2",
+    "calendar_days": 140,
+    "seeds": [
+      101,
+      211,
+      307,
+      401,
+      503
+    ],
+    "gamma_grid": [
+      0,
+      2,
+      4,
+      6,
+      8
+    ],
+    "delta_grid": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28
+    ],
+    "sanity_gammas": [
+      0,
+      4,
+      8
+    ],
+    "sanity_deltas": [
+      1,
+      7,
+      14,
+      28
+    ],
+    "h_scale_grid": [
+      0.5,
+      0.75,
+      1.0,
+      1.5,
+      2.0
+    ],
+    "results_subdir": "v15",
+    "model_version": "v15"
+  },
+  "market": {
+    "n_sellers": 6,
+    "n_buyers": 8,
+    "n_carriers": 4,
+    "items": [
+      "A",
+      "B"
+    ],
+    "sellers_by_item": {
+      "A": [
+        0,
+        1,
+        2
+      ],
+      "B": [
+        3,
+        4,
+        5
+      ]
+    },
+    "weight": {
+      "A": 10.0,
+      "B": 2.0
+    },
+    "volume": {
+      "A": 2.0,
+      "B": 10.0
+    }
+  },
+  "data": {
+    "demand_poisson_lambda": 10.0,
+    "rho_supply": 1.25,
+    "rho_capacity": 1.25,
+    "demand_deviation_rate": 0.2,
+    "seller_allocation_low": 0.9,
+    "seller_allocation_high": 1.1,
+    "carrier_allocation_low": 0.9,
+    "carrier_allocation_high": 1.1,
+    "realization_noise_rate": 0.2,
+    "realization_noise_mode": "market"
+  },
+  "economics": {
+    "a_low": 120.0,
+    "a_high": 180.0,
+    "b_low": 60.0,
+    "b_high": 100.0,
+    "c_low": 15.0,
+    "c_high": 35.0,
+    "h_low": 10.0,
+    "h_high": 14.0,
+    "c_wait": 0.5
+  },
+  "scenarios": [
+    {
+      "name": "No-shock",
+      "weight": 0.6,
+      "theta": 0.0,
+      "gamma": 0.0
+    },
+    {
+      "name": "Demand_Surge",
+      "weight": 0.2,
+      "theta": 0.15,
+      "gamma": 0.0
+    },
+    {
+      "name": "Network_Disruption",
+      "weight": 0.2,
+      "theta": 0.0,
+      "gamma": 0.15
+    }
+  ],
+  "solver": {
+    "threads": 4,
+    "time_limit_sec": 600.0,
+    "method": -1,
+    "numeric_focus": 1,
+    "output_flag": 0,
+    "write_log_files": false,
+    "compute_iis_on_infeasible": true
+  },
+  "extensions": {
+    "auction_fixed_cost_grid": [
+      100.0,
+      200.0,
+      400.0
+    ],
+    "auction_fixed_cost_default": 200.0,
+    "terminal_backlog_wait_slots": 1.0,
+    "service_level_min": 0.95,
+    "service_shortfall_penalty": 100.0,
+    "stage4_gammas": [
+      0,
+      4,
+      8
+    ],
+    "pricing_gammas": [
+      0,
+      4,
+      8
+    ],
+    "pricing_seed": 101
+  }
+}
