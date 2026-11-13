@@ -15,3 +15,10 @@ docs/tex/*.log
 docs/tex/*.out
 docs/tex/*.toc
 docs/tex/*.synctex.gz
+
+# large per-slot diagnostics (regenerable); summaries, regret, heuristics, pricing and figures stay tracked
+sources/results/*/*/capacity_diagnostics.csv
+sources/results/*/*/robust_diagnostics.csv
+sources/results/*/*/positive_trades.csv
+sources/results/*/07_pricing/agents_*.csv
+sources/results/*/07_pricing/markets_*.csv
